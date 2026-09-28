@@ -282,13 +282,47 @@ func run(ctx context.Context, o options) error {
 	}()
 
 	st := &stats{}
-	err = play(ctx, o, src, asrc, t0, send, st)
+	err = play(ctx, o, src, asrc, &timeline{t0: t0}, send, st)
 	_ = send(wire.KindBye)
 	st.report(time.Since(t0))
 	if ctx.Err() != nil {
 		return nil // stopped by Ctrl-C or by the device
 	}
 	return err
+}
+
+// timeline stamps picture and sound on one clock. A stamp counts from the start of the clip, so when the
+// source stalls (a reset connection, a slow server, a burst of Wi-Fi loss) everything after it would be
+// stamped in the past, and the device, rightly, drops what is late: seconds of it, until the source has
+// caught up. So a stream that finds itself more than stallMax behind real time moves the clock for both
+// streams: a pause, then playback carries on together. Sending is paced to the stamps as well, so a
+// burst that makes up for a stall does not run ahead of what the device will hold.
+type timeline struct {
+	t0    time.Time
+	mu    sync.Mutex
+	shift time.Duration
+}
+
+const (
+	stallMax = 300 * time.Millisecond // behind real time by this much is a stall
+	lead     = 120 * time.Millisecond // how far ahead of its stamp's time a message may be sent
+)
+
+// stamp is the stamp for something at pos in its own stream, in µs, and waits until it is time to send it.
+func (tl *timeline) stamp(pos time.Duration, what string) int64 {
+	now := time.Since(tl.t0)
+	tl.mu.Lock()
+	st := pos + tl.shift
+	if late := now - st; late > stallMax {
+		tl.shift += late
+		st = now
+		log.Printf("the source fell %.1f s behind (%s): moving the clock on", late.Seconds(), what)
+	}
+	tl.mu.Unlock()
+	if ahead := st - now; ahead > lead {
+		time.Sleep(ahead - lead)
+	}
+	return st.Microseconds()
 }
 
 type stats struct {
@@ -303,7 +337,7 @@ func (s *stats) report(d time.Duration) {
 
 // play runs one ffmpeg that makes both streams, so picture and sound come from the same demuxer at
 // the same pace, and sends what it makes.
-func play(ctx context.Context, o options, src, asrc string, t0 time.Time, send func(byte, ...[]byte) error, st *stats) error {
+func play(ctx context.Context, o options, src, asrc string, tl *timeline, send func(byte, ...[]byte) error, st *stats) error {
 	w, h := o.w/o.scale, o.h/o.scale
 	vf := fmt.Sprintf("fps=%d,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2",
 		o.fps, w, h, w, h)
@@ -315,6 +349,13 @@ func play(ctx context.Context, o options, src, asrc string, t0 time.Time, send f
 		}
 		if o.length != "" {
 			args = append(args, "-t", o.length) // before -i, so it limits the input and so both streams
+		}
+		if strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+			// A long stream from a web server gets its connection reset now and then (YouTube's do, after a
+			// few minutes): without these ffmpeg gives up on that input and carries on without it, which
+			// is a video that loses its sound.
+			args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
+				"-reconnect_on_network_error", "1", "-reconnect_delay_max", "5")
 		}
 		args = append(args, "-i", u)
 	}
@@ -352,9 +393,9 @@ func play(ctx context.Context, o options, src, asrc string, t0 time.Time, send f
 	}
 
 	errs := make(chan error, 2)
-	go func() { errs <- video(vout, o, t0, send, st) }()
+	go func() { errs <- video(vout, o, tl, send, st) }()
 	if ar != nil {
-		go func() { errs <- pcm(ar, t0, send, st) }()
+		go func() { errs <- pcm(ar, tl, send, st) }()
 	}
 	n := 1
 	if ar != nil {
@@ -372,7 +413,7 @@ func play(ctx context.Context, o options, src, asrc string, t0 time.Time, send f
 	return first
 }
 
-func video(r io.Reader, o options, t0 time.Time, send func(byte, ...[]byte) error, st *stats) error {
+func video(r io.Reader, o options, tl *timeline, send func(byte, ...[]byte) error, st *stats) error {
 	br := bufio.NewReaderSize(r, 1<<20)
 	var base time.Duration
 	report, last := time.Now(), int64(0)
@@ -385,17 +426,18 @@ func video(r io.Reader, o options, t0 time.Time, send func(byte, ...[]byte) erro
 			return err
 		}
 		if i == 0 {
-			base = time.Since(t0) // ffmpeg's start-up is not part of the clip
+			base = time.Since(tl.t0) // ffmpeg's start-up is not part of the clip
 		}
-		stamp := base + time.Duration(i)*time.Second/time.Duration(o.fps)
-		if err := send(wire.KindVideo, wire.Stamp(stamp.Microseconds()), jpg); err != nil {
+		stamp := tl.stamp(base+time.Duration(i)*time.Second/time.Duration(o.fps), "picture")
+		if err := send(wire.KindVideo, wire.Stamp(stamp), jpg); err != nil {
 			return err
 		}
 		st.frames.Add(1)
 		st.bytes.Add(int64(len(jpg)))
 		if !o.quiet && time.Since(report) > 5*time.Second {
 			n := st.frames.Load()
-			log.Printf("video: %d frames, %.1f fps", n, float64(n-last)/time.Since(report).Seconds())
+			log.Printf("video: %d frames, %.1f fps; audio: %.0f s sent", n, float64(n-last)/time.Since(report).Seconds(),
+				float64(st.chunks.Load())*chunk.Seconds())
 			report, last = time.Now(), n
 		}
 	}
@@ -429,7 +471,7 @@ func nextJPEG(r *bufio.Reader) ([]byte, error) {
 }
 
 // pcm sends the audio in 20 ms pieces, stamped by how much has been sent.
-func pcm(r io.Reader, t0 time.Time, send func(byte, ...[]byte) error, st *stats) error {
+func pcm(r io.Reader, tl *timeline, send func(byte, ...[]byte) error, st *stats) error {
 	var base time.Duration
 	buf := make([]byte, int(chunk/time.Millisecond)*rate/1000*channels*2)
 	for n := 0; ; n++ {
@@ -440,10 +482,10 @@ func pcm(r io.Reader, t0 time.Time, send func(byte, ...[]byte) error, st *stats)
 			return err
 		}
 		if n == 0 {
-			base = time.Since(t0)
+			base = time.Since(tl.t0)
 		}
-		stamp := base + time.Duration(n)*chunk
-		if err := send(wire.KindAudio, wire.Stamp(stamp.Microseconds()), buf); err != nil {
+		stamp := tl.stamp(base+time.Duration(n)*chunk, "sound")
+		if err := send(wire.KindAudio, wire.Stamp(stamp), buf); err != nil {
 			return err
 		}
 		st.chunks.Add(1)

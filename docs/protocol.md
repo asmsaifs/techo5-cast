@@ -54,6 +54,17 @@ moment it was captured, and sound and picture stay together however the network 
 Before the first clock message nothing can be placed and media is dropped, so **the phone sends a clock
 message first**.
 
+## Stalls: the sender's job
+
+A stamp is the moment the content is to be shown, not its position in the clip. If the source stalls
+(a dropped connection, a slow server, a burst of Wi-Fi loss) and the sender goes on counting from the
+clip's start, everything after the stall is stamped in the past, and the device, rightly, drops what
+is late: seconds of picture and sound, until the sender has caught up. A sender that finds itself more
+than 300 ms behind real time should move the clock forward for **both** streams at once, so there is a
+pause and then playback carries on together, and should not send further ahead of a stamp's time than
+`latency_ms` allows. `castsend` does both (`timeline` in `cmd/castsend/main.go`); the phone app has to.
+A 6 s stall measured this way costs 6 s of pause and no dropped frames.
+
 ## What the device drops
 
 - A frame more than 100 ms past its time, and older frames when a newer one is waiting: the picture
