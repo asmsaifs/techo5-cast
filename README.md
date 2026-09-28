@@ -34,5 +34,6 @@ It shows nothing on the screen yet; it reports the frame rate the device sustain
 - [x] Protocol, encryption, timing, dropping of late frames (device receiver, tested)
 - [x] `castsend` test sender
 - [ ] Measure on a real Echo Show (frames per second, CPU next to the wake word, A/V drift)
-- [ ] Device: cast page on the screen, audio to the speaker, mDNS advert, on-screen consent
+- [x] Device: cast page on the screen, audio to the speaker, mDNS advert, `Cast` switch and `cast_key` action (techo5 branch `feature/cast`; compiled, not yet run on a Show)
+- [ ] Device: clock-drift correction for long casts, an on-screen consent prompt, a row in the settings sheet
 - [ ] Android app
