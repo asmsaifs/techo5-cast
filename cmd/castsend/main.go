@@ -142,32 +142,37 @@ func pick(o options) (string, error) {
 	return "", errors.New("no device found; is Cast switched on? try -addr host:port")
 }
 
-// source is what ffmpeg is to read: a file or a URL as it is, or a page yt-dlp turns into a stream.
-func source(ctx context.Context, in string) (string, error) {
+// source is what ffmpeg is to read: a file or a URL as it is, or a page yt-dlp turns into streams. audio
+// is empty when the picture's own input carries the sound; YouTube and the like keep them apart.
+func source(ctx context.Context, in string) (video, audio string, err error) {
 	u, err := url.Parse(in)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		return in, nil // a file, or something ffmpeg reads by itself (rtsp://…)
+		return in, "", nil // a file, or something ffmpeg reads by itself (rtsp://…)
 	}
 	// A direct media URL goes straight to ffmpeg; a page is yt-dlp's to resolve.
 	if p := strings.ToLower(u.Path); strings.HasSuffix(p, ".mp4") || strings.HasSuffix(p, ".m3u8") ||
 		strings.HasSuffix(p, ".webm") || strings.HasSuffix(p, ".mkv") || strings.HasSuffix(p, ".mov") ||
 		strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".mp3") {
-		return in, nil
+		return in, "", nil
 	}
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
-		return "", errors.New("that is a web page, not a video file: install yt-dlp (brew install yt-dlp) to cast it")
+		return "", "", errors.New("that is a web page, not a video file: install yt-dlp (brew install yt-dlp) to cast it")
 	}
 	log.Print("asking yt-dlp for the stream…")
-	// One URL with both picture and sound, small: this device shows 960×480.
-	out, err := exec.CommandContext(ctx, "yt-dlp", "--no-playlist", "-f", "b[height<=720]/b", "-g", in).Output()
+	// Small: this device shows 960×480. Most videos come as a picture stream and a sound stream with no
+	// combined one, and then yt-dlp prints two URLs, the picture's first.
+	out, err := exec.CommandContext(ctx, "yt-dlp", "--no-playlist", "-f", "bv*[height<=720]+ba/b[height<=720]/b", "-g", in).Output()
 	if err != nil {
-		return "", fmt.Errorf("yt-dlp: %w", err)
+		return "", "", fmt.Errorf("yt-dlp: %w", err)
 	}
 	lines := strings.Fields(string(out))
-	if len(lines) == 0 {
-		return "", errors.New("yt-dlp found no stream")
+	switch len(lines) {
+	case 0:
+		return "", "", errors.New("yt-dlp found no stream")
+	case 1:
+		return lines[0], "", nil
 	}
-	return lines[0], nil
+	return lines[0], lines[1], nil
 }
 
 // hasAudio is whether ffprobe finds an audio stream in src. When ffprobe is not there, or cannot tell,
@@ -186,12 +191,12 @@ func run(ctx context.Context, o options) error {
 	if err != nil {
 		return err
 	}
-	src, err := source(ctx, o.in)
+	src, asrc, err := source(ctx, o.in)
 	if err != nil {
 		return err
 	}
 
-	if o.audio && !hasAudio(ctx, src) {
+	if o.audio && asrc == "" && !hasAudio(ctx, src) {
 		log.Print("no audio track: casting the picture only")
 		o.audio = false
 	}
@@ -277,7 +282,7 @@ func run(ctx context.Context, o options) error {
 	}()
 
 	st := &stats{}
-	err = play(ctx, o, src, t0, send, st)
+	err = play(ctx, o, src, asrc, t0, send, st)
 	_ = send(wire.KindBye)
 	st.report(time.Since(t0))
 	if ctx.Err() != nil {
@@ -298,18 +303,27 @@ func (s *stats) report(d time.Duration) {
 
 // play runs one ffmpeg that makes both streams, so picture and sound come from the same demuxer at
 // the same pace, and sends what it makes.
-func play(ctx context.Context, o options, src string, t0 time.Time, send func(byte, ...[]byte) error, st *stats) error {
+func play(ctx context.Context, o options, src, asrc string, t0 time.Time, send func(byte, ...[]byte) error, st *stats) error {
 	w, h := o.w/o.scale, o.h/o.scale
 	vf := fmt.Sprintf("fps=%d,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2",
 		o.fps, w, h, w, h)
-	args := []string{"-loglevel", "error", "-re"}
-	if o.start != "" {
-		args = append(args, "-ss", o.start)
+	args := []string{"-loglevel", "error"}
+	input := func(u string) {
+		args = append(args, "-re")
+		if o.start != "" {
+			args = append(args, "-ss", o.start)
+		}
+		if o.length != "" {
+			args = append(args, "-t", o.length) // before -i, so it limits the input and so both streams
+		}
+		args = append(args, "-i", u)
 	}
-	if o.length != "" {
-		args = append(args, "-t", o.length) // before -i, so it limits the input and so both streams
+	input(src)
+	amap := "0:a:0?"
+	if asrc != "" {
+		input(asrc)
+		amap = "1:a:0"
 	}
-	args = append(args, "-i", src)
 	args = append(args, "-map", "0:v:0", "-an", "-vf", vf, "-q:v", fmt.Sprint(o.q), "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1")
 	var aw *os.File
 	var ar *os.File
@@ -318,7 +332,7 @@ func play(ctx context.Context, o options, src string, t0 time.Time, send func(by
 		if ar, aw, err = os.Pipe(); err != nil {
 			return err
 		}
-		args = append(args, "-map", "0:a:0?", "-vn", "-ar", fmt.Sprint(rate), "-ac", fmt.Sprint(channels), "-f", "s16le", "pipe:3")
+		args = append(args, "-map", amap, "-vn", "-ar", fmt.Sprint(rate), "-ac", fmt.Sprint(channels), "-f", "s16le", "pipe:3")
 	}
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
