@@ -33,14 +33,14 @@ import (
 
 	"github.com/libp2p/zeroconf/v2"
 
-	"techno5-cast/wire"
+	"techo5-cast/wire"
 )
 
 const (
 	rate     = 48000
 	channels = 2
 	chunk    = 20 * time.Millisecond // audio sent in pieces this long
-	service  = "_techno5cast._tcp"
+	service  = "_techo5cast._tcp"
 )
 
 type options struct {

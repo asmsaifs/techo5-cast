@@ -1,16 +1,16 @@
-# techno5-cast protocol, version 1
+# techo5-cast protocol, version 1
 
 A phone sends its screen and audio directly to a TECHO5 device. No server in between.
 
 ## Finding the device
 
-The device advertises `_techno5cast._tcp` over mDNS (planned; the port is the device's setting). The
+The device advertises `_techo5cast._tcp` over mDNS (planned; the port is the device's setting). The
 sender may also be given `host:port`.
 
 ## The connection
 
-TCP, then Noise `NNpsk0` (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), prologue `techno5-cast/1`. The
-pre-shared key is the SHA-256 of `"techno5-cast psk:" + pairing key`. A wrong key fails the handshake;
+TCP, then Noise `NNpsk0` (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), prologue `techo5-cast/1`. The
+pre-shared key is the SHA-256 of `"techo5-cast psk:" + pairing key`. A wrong key fails the handshake;
 the key never crosses the network.
 
 Every handshake message and every record after it is a 4-byte big-endian length, then that many bytes.

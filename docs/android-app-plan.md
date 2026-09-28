@@ -1,6 +1,6 @@
 # Android app plan
 
-The phone half of techno5-cast: an app that sends a video, or the whole screen, to a TECHO5 Echo Show
+The phone half of techo5-cast: an app that sends a video, or the whole screen, to a TECHO5 Echo Show
 over the protocol in [protocol.md](protocol.md). This plan is written before any app code. The device
 side and `castsend` already work; what is left is the phone.
 
@@ -138,7 +138,7 @@ Modules (Gradle), so the risky parts can be built and tested alone:
 | `app` | Activities, service, notification, tile, UI (Jetpack Compose), settings |
 
 Language and stack: Kotlin, Jetpack Compose (Material 3), Media3 (ExoPlayer, MediaSession), coroutines
-and Flow, Gradle with a version catalog. Repo layout: `android/` inside the techno5-cast repository.
+and Flow, Gradle with a version catalog. Repo layout: `android/` inside the techo5-cast repository.
 
 ## 5. The engine
 
@@ -227,8 +227,8 @@ The system's consent appears every session and the user may pick one app instead
 Kotlin port of `wire/`; the spec is [protocol.md](protocol.md), the reference implementation
 `wire/secure.go`.
 
-- **Noise `NNpsk0`**, `Noise_NNpsk0_25519_ChaChaPoly_SHA256`, prologue `techno5-cast/1`, PSK = SHA-256 of
-  `"techno5-cast psk:" + key`. Use [noise-java](https://github.com/rweather/noise-java) (supports
+- **Noise `NNpsk0`**, `Noise_NNpsk0_25519_ChaChaPoly_SHA256`, prologue `techo5-cast/1`, PSK = SHA-256 of
+  `"techo5-cast psk:" + key`. Use [noise-java](https://github.com/rweather/noise-java) (supports
   `NNpsk0`); check its licence and Android compatibility, and write the handful of primitives
   ourselves if it does not fit.
 - **Records**: 4-byte length + ciphertext, at most 60000 bytes of plaintext each; messages inside
@@ -249,7 +249,7 @@ Protocol additions worth making before release (backwards compatible):
 
 ## 7. Discovery, pairing, keys
 
-- **Discovery**: `NsdManager` browsing `_techno5cast._tcp`. Holds a `MulticastLock` while browsing.
+- **Discovery**: `NsdManager` browsing `_techo5cast._tcp`. Holds a `MulticastLock` while browsing.
   Shows name, address and whether it answered. **Add by address** for networks where mDNS is blocked.
 - **The key**: the device's Cast key is set in Home Assistant (`cast_key`). The app takes it typed,
   pasted or, better, **scanned from a QR code** (the Show could display one; phase 6). It is stored
@@ -345,7 +345,7 @@ The phone will need these from the Show; none blocks the first milestones.
 ## 12. Repository and build
 
 ```
-techno5-cast/
+techo5-cast/
   wire/ cmd/castsend/ docs/      (existing: Go)
   android/
     protocol/  engine/  discovery/  extract/  app/

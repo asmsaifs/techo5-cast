@@ -1,4 +1,4 @@
-// Package wire is the techno5-cast protocol: the encrypted connection and the messages on it.
+// Package wire is the techo5-cast protocol: the encrypted connection and the messages on it.
 // docs/protocol.md is the specification; echod/internal/feature/cast in the techo5 repository is the
 // device's copy of this file and has to match it byte for byte on the wire.
 package wire
@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	Prologue  = "techno5-cast/1"
+	Prologue  = "techo5-cast/1"
 	recordMax = 60000 // well inside Noise's 65535-byte message limit, with room for the tag
 	wireMax   = recordMax + 64
 
@@ -32,7 +32,7 @@ func suite() noise.CipherSuite {
 
 // psk is the key as Noise wants it: 32 bytes, whatever the key's length.
 func psk(key string) []byte {
-	sum := sha256.Sum256([]byte("techno5-cast psk:" + key))
+	sum := sha256.Sum256([]byte("techo5-cast psk:" + key))
 	return sum[:]
 }
 

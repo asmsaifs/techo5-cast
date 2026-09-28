@@ -1,4 +1,4 @@
-# techno5-cast
+# techo5-cast
 
 Cast a phone's screen and audio straight to a [TECHO5](https://github.com/HuskerMinion/techo5) Echo
 Show, with no server between them.

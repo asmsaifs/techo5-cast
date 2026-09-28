@@ -1,4 +1,4 @@
-module techno5-cast
+module techo5-cast
 
 go 1.26.0
 
