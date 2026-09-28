@@ -12,28 +12,33 @@ Show, with no server between them.
 
 ## Try it
 
-Needs `ffmpeg`. On the machine with the Go toolchain:
+Needs `ffmpeg` (and `ffprobe`); `yt-dlp` too for YouTube and other web pages.
 
 ```sh
 go build -o bin/castsend ./cmd/castsend
+export CASTKEY=the-pairing-key            # the device's Cast key (cast_key action in Home Assistant)
 
-# a stand-in for the device, on this machine:
-cd ../techo5/echod && CAST_BENCH=:8940 CAST_KEY=pairing-key \
-  go test -count=1 -run TestBench -v ./internal/feature/cast
-
-# in another terminal:
-bin/castsend -addr 127.0.0.1:8940 -key pairing-key -i clip.mp4
+bin/castsend -list                        # devices found over mDNS
+bin/castsend -i clip.mp4                  # picks the device it finds
+bin/castsend -i https://example.com/film.mp4 -scale 2 -fps 30
+bin/castsend -i 'https://www.youtube.com/watch?v=…' -scale 2     # needs yt-dlp
+bin/castsend -addr 192.168.1.50:8940 -ss 1:30 -t 60 -i clip.mp4
 ```
 
-On the device, build the bench for it (`GOOS=linux GOARCH=arm GOARM=7 go test -c -o castbench
-./internal/feature/cast` in `echod`), copy it over, run it there, and point `castsend` at the device.
-It shows nothing on the screen yet; it reports the frame rate the device sustains.
+Ctrl-C ends the cast, and so does a swipe in from the left edge of the device's screen. On this
+hardware `-scale 2` is the setting to use for real video (see [docs/protocol.md](docs/protocol.md) for
+the numbers).
+
+On the device, turn on the **Cast** switch in Home Assistant and set the key with the `cast_key`
+action. The device log (`/data/techo5-linux/techo5.log`) prints `cast decoded_fps=… painted_fps=…` and
+why any frames were dropped, every five seconds.
 
 ## Status
 
 - [x] Protocol, encryption, timing, dropping of late frames (device receiver, tested)
 - [x] `castsend` test sender
-- [ ] Measure on a real Echo Show (frames per second, CPU next to the wake word, A/V drift)
+- [x] Measured on a real Echo Show: 30 fps at half scale with real video, audio clean
+- [ ] A/V drift over a long cast (the card's clock against the phone's)
 - [x] Device: cast page on the screen, audio to the speaker, mDNS advert, `Cast` switch and `cast_key` action (techo5 branch `feature/cast`; compiled, not yet run on a Show)
 - [ ] Device: clock-drift correction for long casts, an on-screen consent prompt, a row in the settings sheet
 - [ ] Android app

@@ -25,7 +25,7 @@ Inside the encrypted stream: a 4-byte big-endian length, a kind byte, the payloa
 
 | Kind | Name | Direction | Payload |
 |---|---|---|---|
-| 0x01 | hello | phone → device | JSON `{name, video, audio, rate, channels}`; the first message, once |
+| 0x01 | hello | phone → device | JSON `{name, video, audio, rate, channels, scale}`; the first message, once |
 | 0x10 | welcome | device → phone | JSON `{ok, reason, w, h, rate, channels, latency_ms}` |
 | 0x02 | video | phone → device | 8-byte stamp (µs), then a JPEG of the whole frame |
 | 0x03 | audio | phone → device | 8-byte stamp (µs), then interleaved S16LE PCM, 48000 Hz, 2 channels |
@@ -34,6 +34,13 @@ Inside the encrypted stream: a 4-byte big-endian length, a kind byte, the payloa
 
 A refused hello is answered with `ok:false` and a `reason` for the person to read ("in a call",
 "declined"), and the device closes.
+
+## Scale
+
+`scale` in the hello is 1 (frames are screen size, the default) or 2 (frames are half the screen's
+width and height, and the device draws each pixel four times). Decoding a JPEG is what limits a device,
+and at 2 it does a quarter of the work for a softer picture. A device refuses a frame larger than the
+screen divided by the scale.
 
 ## Time
 
@@ -60,5 +67,15 @@ message at all ends the cast.
 
 ## Numbers so far
 
-Measured with `castsend` on a Mac against the device receiver (loopback, so the network is free):
-960×480 at 10 fps, JPEG quality 6, about 2 Mbit/s; all audio delivered. Device numbers: see the README.
+Measured on an Echo Show 5 (2nd gen) over Wi-Fi with the TECHO5 daemon and wake word running, casting
+Big Buck Bunny (720p) with `castsend`, JPEG quality 6:
+
+| Sent | Frames the device showed | Bandwidth |
+|---|---|---|
+| scale 1, 15 fps | about 12.5 (decode-bound) | 7.6 Mbit/s |
+| scale 1, 24 fps | about 12.5 (decode-bound) | 11 Mbit/s |
+| scale 2, 20 fps | 20 | 3 Mbit/s |
+| scale 2, 30 fps | 30 (5 runs of 5, no drops) | 4.3 Mbit/s |
+
+Audio: no late or dropped chunks in any run. A synthetic test pattern is much lighter than real video,
+so only real content says anything about the ceiling.
