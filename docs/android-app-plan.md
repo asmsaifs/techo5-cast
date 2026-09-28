@@ -37,7 +37,7 @@ sending small JPEG frames and PCM audio. Nothing runs in between: no server.
 | Distribution | GitHub Releases (signed APK) and F-Droid; no Play Store |
 | Noise on Android | Pure Kotlin/Java (noise-java), interop-tested against the Go code; `gomobile` only as a fallback |
 | First release | Files, links **and** mirroring |
-| Name | Still open, see section 16 |
+| Name | **TECHO5 Cast** (section 16) |
 
 Why pure Kotlin for Noise: the protocol layer is small (about 300 lines in Go), noise-java implements
 `NNpsk0` with X25519, ChaChaPoly and SHA-256, and staying out of `gomobile` means no embedded Go
@@ -403,9 +403,10 @@ and the device side, is closer to six.
 | Doze and vendor background limits | Service killed with the screen off | Foreground service + wake lock + battery-optimisation guidance; test on a few brands |
 | A stranger on the network knows the port | Anyone can try keys | Key is 8+ chars; add handshake rate limiting and the consent prompt (M6) |
 
-## 16. Still open: the name
+## 16. The name
 
-Suggestions, most to least clear:
+**Decided: TECHO5 Cast.** Package id `io.github.<you>.techo5cast` (the account name is still to be
+filled in). The options that were considered, most to least clear:
 
 | Name | Why |
 |---|---|
