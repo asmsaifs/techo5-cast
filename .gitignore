@@ -1,0 +1,6 @@
+bin/
+.DS_Store
+*.log
+*.jpg
+*.mp4
+*.pcm
