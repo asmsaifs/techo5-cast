@@ -114,5 +114,6 @@ every five seconds.
 - [x] Android app: files, links, share sheet, mirror, notification and tile, reconnect, adaptive frame rate,
   pairing by QR
 - [x] Measured on a real Echo Show 5: 30 fps at half scale with real video, audio clean
-- [ ] The Show's cast receiver in a signed TECHO5 release (today it is a test build over SSH)
-- [ ] First tagged app release
+- [x] The Show's cast receiver in a signed TECHO5 release, installed over the air
+- [x] First tagged app release ([v0.1.0](https://github.com/asmsaifs/techo5-cast/releases/tag/v0.1.0), signed APKs)
+- [ ] F-Droid: not in the main repository (its prebuilt yt-dlp runtime is not accepted); see [docs/releasing.md](docs/releasing.md)
