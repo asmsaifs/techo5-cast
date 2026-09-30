@@ -35,6 +35,13 @@ android {
         jvmTarget = "17"
     }
 
+    // yt-dlp's Python runtime is shipped as native libraries and unpacked at install.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildFeatures {
         compose = true
     }
@@ -51,6 +58,7 @@ dependencies {
     implementation(project(":engine"))
     implementation(project(":protocol"))
     implementation(project(":discovery"))
+    implementation(project(":extract"))
     implementation(libs.kotlinx.coroutines.core)
 
     implementation("androidx.core:core-ktx:1.15.0")

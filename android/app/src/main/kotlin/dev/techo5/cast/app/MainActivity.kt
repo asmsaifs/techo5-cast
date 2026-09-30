@@ -148,7 +148,7 @@ private fun NowCasting(session: Session) {
     when (session) {
         Session.Idle -> {}
         is Session.Connecting -> Card(Modifier.fillMaxWidth()) {
-            Text("Connecting to ${session.device}…", Modifier.padding(16.dp))
+            Text("${session.step} · ${session.device}…", Modifier.padding(16.dp))
         }
         is Session.Ended -> session.reason?.let {
             Card(Modifier.fillMaxWidth()) { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }

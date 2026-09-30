@@ -33,6 +33,11 @@ class DeviceStore(context: Context) {
         }
     }
 
+    /** The device last cast to; the picker lists it first. */
+    var lastUsed: String?
+        get() = prefs.getString("last", null)
+        set(v) { prefs.edit().putString("last", v).apply() }
+
     fun find(id: String): Device? = all().firstOrNull { it.id == id }
 
     /** Adds the device, or replaces the one at the same address. */

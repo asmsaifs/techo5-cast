@@ -17,6 +17,10 @@ import dev.techo5.cast.discovery.DeviceStore
 import dev.techo5.cast.engine.CastEngine
 import dev.techo5.cast.engine.CastSender
 import dev.techo5.cast.engine.CastState
+import dev.techo5.cast.engine.PlayItem
+import dev.techo5.cast.extract.ExtractFailed
+import dev.techo5.cast.extract.YtDlpExtractor
+import dev.techo5.cast.extract.isDirectMedia
 import dev.techo5.cast.engine.Timeline
 import dev.techo5.cast.engine.CastSender.Companion.Refused
 import kotlinx.coroutines.CoroutineScope
@@ -33,7 +37,7 @@ import kotlinx.coroutines.withContext
 /** What the app shows about the cast in progress. */
 sealed interface Session {
     data object Idle : Session
-    data class Connecting(val device: String) : Session
+    data class Connecting(val device: String, val step: String = "Connecting") : Session
     data class Casting(val device: String, val title: String, val state: CastState) : Session
     /** The cast is over; [reason] is a sentence for the person, or null after a normal stop. */
     data class Ended(val reason: String?) : Session
@@ -84,14 +88,36 @@ class CastService : Service() {
         Session_.value = Session.Connecting(device)
         startForeground(
             NOTIFICATION_ID,
-            notification("Connecting to $device", title, false),
+            notification("Casting to $device", title, false),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
         )
         acquireLocks()
-        scope.launch { connect(target, uri) }
+        scope.launch {
+            val item = resolve(uri) ?: return@launch
+            connect(target, item)
+        }
     }
 
-    private suspend fun connect(target: Device, uri: Uri) {
+    /** A web link goes through the extractor; a file or a direct media link plays as it is. Null after
+     *  ending the cast with the reason. */
+    private suspend fun resolve(uri: Uri): PlayItem? {
+        val link = uri.toString()
+        if (uri.scheme != "http" && uri.scheme != "https" || isDirectMedia(link)) return PlayItem(uri)
+        Session_.value = Session.Connecting(device, "Getting the video")
+        notify(notification("Getting the video…", title, false))
+        return try {
+            val r = withContext(Dispatchers.IO) { YtDlpExtractor(this@CastService).resolve(link) }
+            r.title?.let { title = it }
+            PlayItem(
+                Uri.parse(r.video.url), r.audio?.let { Uri.parse(it.url) }, r.video.headers, r.audio?.headers.orEmpty(),
+            )
+        } catch (e: ExtractFailed) {
+            finish(e.message)
+            null
+        }
+    }
+
+    private suspend fun connect(target: Device, item: PlayItem) {
         val timeline = Timeline()
         var created: CastEngine? = null
         val sender = try {
@@ -113,7 +139,7 @@ class CastService : Service() {
         }
         val engine = CastEngine(this, sender, timeline).also { created = it }
         this.engine = engine
-        engine.play(uri) { state ->
+        engine.play(item) { state ->
             latest = state
             Session_.value = Session.Casting(device, title, state)
             state.ended?.let { finish(it) }

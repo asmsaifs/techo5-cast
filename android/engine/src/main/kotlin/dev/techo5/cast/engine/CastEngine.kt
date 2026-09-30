@@ -8,7 +8,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import java.util.LinkedHashMap
 
@@ -21,6 +26,14 @@ data class CastState(
     val grabAvgMs: Float = 0f,
     val grabSkipped: Long = 0,
     val ended: String? = null,
+)
+
+/** What to play: a picture stream and, if the sound is a separate stream, that too. */
+class PlayItem(
+    val video: Uri,
+    val audio: Uri? = null,
+    val videoHeaders: Map<String, String> = emptyMap(),
+    val audioHeaders: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -59,7 +72,9 @@ class CastEngine(private val context: Context, private val sender: CastSender, p
     }
 
     /** Starts casting [uri] (a content:// or file:// URI, or a direct http(s) link). */
-    fun play(uri: Uri, onState: (CastState) -> Unit) {
+    fun play(uri: Uri, onState: (CastState) -> Unit) = play(PlayItem(uri), onState)
+
+    fun play(item: PlayItem, onState: (CastState) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper()) { "main thread only" }
         this.onState = onState
         val surface = grabber.start()
@@ -102,9 +117,20 @@ class CastEngine(private val context: Context, private val sender: CastSender, p
                 end("can't play this: ${error.errorCodeName}")
             }
         })
-        p.setMediaItem(MediaItem.fromUri(uri))
+        p.setMediaSource(mediaSource(item))
         p.prepare()
         p.playWhenReady = true
+    }
+
+    /** One source, or picture and sound merged (what YouTube serves), each with its own headers. */
+    private fun mediaSource(item: PlayItem): MediaSource {
+        fun one(uri: Uri, headers: Map<String, String>): MediaSource {
+            val http = DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers).setAllowCrossProtocolRedirects(true)
+            return DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http)).createMediaSource(MediaItem.fromUri(uri))
+        }
+        val video = one(item.video, item.videoHeaders)
+        val audio = item.audio ?: return video
+        return MergingMediaSource(video, one(audio, item.audioHeaders))
     }
 
     fun pause() { player?.pause() }

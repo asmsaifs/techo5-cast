@@ -31,6 +31,7 @@ android {
 dependencies {
     api(project(":protocol"))
     api(libs.media3.exoplayer)
+    implementation(libs.media3.hls)
     implementation(libs.media3.common)
 
     testImplementation(libs.junit)
