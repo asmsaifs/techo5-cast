@@ -16,7 +16,7 @@ Needs `ffmpeg` (and `ffprobe`); `yt-dlp` too for YouTube and other web pages.
 
 ```sh
 go build -o bin/castsend ./cmd/castsend
-export CASTKEY=the-pairing-key            # the device's Cast key (cast_key action in Home Assistant)
+export CASTKEY=the-pairing-key            # the device's Cast key: read it off the pairing code page on the device
 
 bin/castsend -list                        # devices found over mDNS
 bin/castsend -i clip.mp4                  # picks the device it finds
@@ -29,8 +29,9 @@ Ctrl-C ends the cast, and so does a swipe in from the left edge of the device's 
 hardware `-scale 2` is the setting to use for real video (see [docs/protocol.md](docs/protocol.md) for
 the numbers).
 
-On the device, turn on the **Cast** switch in Home Assistant and set the key with the `cast_key`
-action. The device log (`/data/techo5-linux/techo5.log`) prints `cast decoded_fps=… painted_fps=…` and
+On the device, turn Cast on (the **Cast** switch in Home Assistant, or Settings, Connections). It makes
+its own random key; Pairing code shows it as a QR code for the phone app, and in letters for `castsend`.
+The `cast_key` action is only for choosing a key yourself, or, with no key, making a new one. The device log (`/data/techo5-linux/techo5.log`) prints `cast decoded_fps=… painted_fps=…` and
 why any frames were dropped, every five seconds.
 
 ## Status

@@ -489,8 +489,8 @@ private fun GettingStarted(onAdd: () -> Unit) {
     Panel {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Get started", style = MaterialTheme.typography.titleMedium)
-            Step(1, "On the Show, turn Cast on and set its key (cast_key in Home Assistant).")
-            Step(2, "Add the Show here with that key. Keep the phone on the same Wi-Fi.")
+            Step(1, "On the Show, open Settings, Connections, turn Cast on and tap Show on Pairing code.")
+            Step(2, "Add a Show here and scan that code. Keep the phone on the same Wi-Fi.")
             Step(3, "In YouTube or any video app, tap Share and pick TECHO5 Cast. Or use Cast a file.")
             FilledTonalButton(onClick = onAdd, Modifier.padding(top = 4.dp)) { Text("Add a Show") }
         }
