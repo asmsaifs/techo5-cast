@@ -1,6 +1,6 @@
 # TECHO5 Cast
 
-Cast a video, or your phone's whole screen, straight to a [TECHO5](https://github.com/HuskerMinion/techo5)
+Cast a video, or your phone's whole screen, straight to a [TECHO5](https://github.com/asmsaifs/techo5)
 Echo Show, with no server between them.
 
 In YouTube (or any video app) tap **Share → TECHO5 Cast**, and it plays on the Show, picture and sound.
@@ -12,7 +12,8 @@ frames and audio over your own Wi-Fi, encrypted; the Show just displays them.
 
 1. On the Show, open **Settings → Connections**, turn **Cast from a phone** on, and tap **Show** on
    **Pairing code**. (The Show needs a TECHO5 build with the cast receiver; see
-   [docs/releasing.md](docs/releasing.md#the-show-side).)
+   [docs/releasing.md](docs/releasing.md#the-show-side), and the Show's side of this in
+   [techo5 docs/cast.md](https://github.com/asmsaifs/techo5/blob/main/docs/cast.md).)
 2. On the phone, download the APK for your phone from the
    [latest release](https://github.com/asmsaifs/techo5-cast/releases/latest): `arm64-v8a` for nearly every
    phone made since 2017, or the `universal` one if unsure. Open it and allow installing from that source

@@ -15,6 +15,6 @@ Nothing runs in between: the phone decodes the video and sends small JPEG frames
 - Age-restricted, private and members-only videos need a sign-in the app doesn't have.
 
 <b>Notes</b>
-- Needs a TECHO5 Show with Cast turned on. The Show's software is at github.com/HuskerMinion/techo5.
+- Needs a TECHO5 Show with Cast turned on. The Show's software is at github.com/asmsaifs/techo5.
 - Links are turned into streams with yt-dlp, running on the phone. That goes around YouTube's own player, which their terms don't allow, so this app is not on Google Play.
 - No accounts, no analytics, no ads. The phone only talks to the Show and to the sites of the videos you cast.
