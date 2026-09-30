@@ -60,6 +60,7 @@ dependencies {
     implementation(project(":discovery"))
     implementation(project(":extract"))
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.zxing.embedded)
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")

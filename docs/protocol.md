@@ -7,6 +7,19 @@ A phone sends its screen and audio directly to a TECHO5 device. No server in bet
 The device advertises `_techo5cast._tcp` over mDNS (planned; the port is the device's setting). The
 sender may also be given `host:port`.
 
+## Pairing code
+
+The device can draw a QR code (Settings, Connections, Pairing code) holding a link that fills in a phone's
+Add a Show form:
+
+```
+techo5cast://pair?host=192.168.1.20&port=8940&key=ABCDEFGH23456789&name=Kitchen+Show
+```
+
+`host` and `key` are required, `port` defaults to 8940, `name` is optional. The key is in the link, so
+the code is only on the screen while somebody has asked for it, and goes after two minutes or a touch. A
+device with no key makes one when the code is first shown.
+
 ## The connection
 
 TCP, then Noise `NNpsk0` (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), prologue `techo5-cast/1`. The

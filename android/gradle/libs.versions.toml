@@ -6,6 +6,7 @@ noise-java = "0.1.1"
 org-json = "20250517"
 media3 = "1.8.0"
 youtubedl = "0.18.1"
+zxing-embedded = "4.3.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -18,6 +19,8 @@ media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = 
 media3-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
 youtubedl = { module = "io.github.junkfood02.youtubedl-android:library", version.ref = "youtubedl" }
 media3-common = { module = "androidx.media3:media3-common", version.ref = "media3" }
+# QR scanning for the pairing code: Apache-2.0, and works without Google Play services (F-Droid).
+zxing-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxing-embedded" }
 junit = { module = "junit:junit", version = "4.13.2" }
 
 [plugins]

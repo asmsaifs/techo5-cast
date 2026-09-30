@@ -1,5 +1,6 @@
 package dev.techo5.cast.app
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,9 +10,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -32,6 +36,9 @@ import dev.techo5.cast.discovery.Found
 import dev.techo5.cast.engine.CastSender
 import dev.techo5.cast.engine.CastSender.Companion.Refused
 import dev.techo5.cast.engine.Timeline
+import dev.techo5.cast.protocol.parsePairing
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,6 +58,21 @@ fun AddDeviceSheet(found: Found?, onSave: (Device) -> Unit, onDismiss: () -> Uni
     var address by remember { mutableStateOf(found?.let { "${it.host}:${it.port}" } ?: "") }
     var key by remember { mutableStateOf("") }
     var check by remember { mutableStateOf<Check>(Check.Idle) }
+    var scanned by remember { mutableStateOf<String?>(null) }
+    // The Show's pairing code (Settings > Connections > Pairing code) holds all three fields.
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val text = result.contents ?: return@rememberLauncherForActivityResult
+        val pairing = parsePairing(text)
+        if (pairing == null) {
+            scanned = "That is not a TECHO5 Cast code."
+        } else {
+            if (pairing.name.isNotBlank()) name = pairing.name
+            address = "${pairing.host}:${pairing.port}"
+            key = pairing.key
+            check = Check.Idle
+            scanned = "Got ${pairing.name.ifBlank { pairing.host }}. Check the connection, then save."
+        }
+    }
     val scope = rememberCoroutineScope()
     val parsed = parseAddress(address)
     val device = parsed?.takeIf { key.isNotBlank() }?.let { Device(name.ifBlank { it.first }, it.first, it.second, key.trim()) }
@@ -62,10 +84,29 @@ fun AddDeviceSheet(found: Found?, onSave: (Device) -> Unit, onDismiss: () -> Uni
         ) {
             Text(if (found != null) "Add ${found.name}" else "Add a Show", style = MaterialTheme.typography.titleLarge)
             Text(
-                "The key is the Show's Cast key (cast_key in Home Assistant). It is stored encrypted on this phone.",
+                "Scan the code on the Show (Settings, Connections, Pairing code), or type the address and " +
+                    "Cast key. The key is stored encrypted on this phone.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            OutlinedButton(
+                onClick = {
+                    scanner.launch(
+                        ScanOptions()
+                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            .setPrompt("Point at the code on the Show")
+                            .setBeepEnabled(false)
+                            .setOrientationLocked(false),
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Icon(Icons.Filled.QrCodeScanner, null, Modifier.size(20.dp))
+                Text("  Scan the code")
+            }
+            scanned?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
             OutlinedTextField(name, { name = it; check = Check.Idle }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true)
             OutlinedTextField(
                 address, { address = it; check = Check.Idle }, Modifier.fillMaxWidth(),
