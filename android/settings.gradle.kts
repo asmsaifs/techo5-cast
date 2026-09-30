@@ -17,4 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "techo5-cast-android"
 
 include(":protocol")
+include(":engine")
 include(":app")

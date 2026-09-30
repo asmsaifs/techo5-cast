@@ -1,6 +1,20 @@
 package dev.techo5.cast.app
 
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import dev.techo5.cast.engine.CastEngine
+import dev.techo5.cast.engine.CastSender
+import dev.techo5.cast.engine.CastState
+import dev.techo5.cast.engine.Timeline
+import kotlinx.coroutines.delay
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -47,17 +61,62 @@ import kotlin.random.Random
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The spike holds the engine in the activity, so the screen must stay on; M1 moves it into a
+        // foreground service and this goes away.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent { App() }
     }
 }
 
 @Composable
 private fun App() {
-    var addr by remember { mutableStateOf("192.168.1.181:8940") }
-    var key by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("spike", Context.MODE_PRIVATE) }
+    var addr by remember { mutableStateOf(prefs.getString("addr", "192.168.1.181:8940")!!) }
+    var key by remember { mutableStateOf(prefs.getString("key", "")!!) }
+    var engine by remember { mutableStateOf<CastEngine?>(null) }
+    var state by remember { mutableStateOf<CastState?>(null) }
+    var status by remember { mutableStateOf("") }
     var log by remember { mutableStateOf("Enter the device's address and Cast key, then Test.") }
     var running by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    fun castFile(uri: Uri) {
+        prefs.edit().putString("addr", addr).putString("key", key).apply()
+        engine?.stop()
+        status = "Connecting…"
+        scope.launch {
+            val timeline = Timeline()
+            val (host, port) = addr.split(":").let { it[0] to it[1].trim().toInt() }
+            lateinit var created: CastEngine
+            val sender = try {
+                withContext(Dispatchers.IO) {
+                    CastSender.connect(host, port, key, android.os.Build.MODEL, 2, video = true, audio = true, timeline = timeline) {
+                        // From a network thread: hop to the main one.
+                        scope.launch { created.end(it.reason) }
+                    }
+                }
+            } catch (e: Exception) {
+                status = "Failed: ${e.message ?: e.javaClass.simpleName}"
+                return@launch
+            }
+            created = CastEngine(context, sender, timeline)
+            engine = created
+            status = "Casting"
+            created.play(uri) { state = it }
+        }
+    }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) castFile(uri)
+    }
+
+    LaunchedEffect(engine) {
+        while (engine != null) {
+            engine?.publish()
+            delay(1000)
+        }
+    }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -81,6 +140,29 @@ private fun App() {
                     }
                 }) { Text(if (running) "Testing…" else "Test") }
                 Text(log)
+                Button(onClick = { picker.launch(arrayOf("video/*", "audio/*")) }) { Text("Cast a file") }
+                if (engine != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { if (state?.playing == true) engine?.pause() else engine?.resume() }) {
+                            Text(if (state?.playing == true) "Pause" else "Play")
+                        }
+                        OutlinedButton(onClick = { engine?.seekTo(((state?.positionMs ?: 0) - 10_000).coerceAtLeast(0)) }) { Text("-10 s") }
+                        OutlinedButton(onClick = { engine?.seekTo((state?.positionMs ?: 0) + 10_000) }) { Text("+10 s") }
+                        OutlinedButton(onClick = { engine?.stop(); engine = null; status = "Stopped" }) { Text("Stop") }
+                    }
+                }
+                Text(status)
+                state?.let { st ->
+                    val s = st.sender
+                    Text(
+                        "position ${st.positionMs / 1000}s / ${st.durationMs / 1000}s\n" +
+                            "video sent ${s?.videoSent} dropped ${s?.videoDropped}\n" +
+                            "audio sent ${s?.audioSent} dropped ${s?.audioDropped}\n" +
+                            "bytes ${(s?.bytesSent ?: 0) / 1024} KiB, worst write ${s?.worstWriteMs} ms\n" +
+                            "grab avg %.1f ms, skipped %d".format(st.grabAvgMs, st.grabSkipped) +
+                            (st.ended?.let { "\nENDED: $it" } ?: ""),
+                    )
+                }
             }
         }
     }
