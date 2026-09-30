@@ -1,0 +1,22 @@
+[versions]
+kotlin = "2.2.21"
+agp = "8.13.2"
+coroutines = "1.10.2"
+noise-java = "0.1.1"
+org-json = "20250517"
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+# Signal's fork of rweather/noise-java (github.com/signalapp/noise-java): same
+# com.southernstorm.noise.protocol API, published to Maven Central, kept alive.
+noise-java = { module = "org.signal.forks:noise-java", version.ref = "noise-java" }
+org-json = { module = "org.json:json", version.ref = "org-json" }
+junit = { module = "junit:junit", version = "4.13.2" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
