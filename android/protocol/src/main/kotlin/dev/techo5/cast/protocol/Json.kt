@@ -21,6 +21,7 @@ fun Hello.toJson(): String {
     if (rate != 0) o.put("rate", rate)
     if (channels != 0) o.put("channels", channels)
     if (scale != 0) o.put("scale", scale)
+    if (title.isNotEmpty()) o.put("title", title)
     return o.toString()
 }
 
@@ -33,6 +34,17 @@ fun parseHello(json: String): Hello {
         rate = o.optInt("rate", 0),
         channels = o.optInt("channels", 0),
         scale = o.optInt("scale", 0),
+        title = o.optString("title", ""),
+    )
+}
+
+fun parseStats(json: String): Stats {
+    val o = JSONObject(json)
+    return Stats(
+        shown = o.optInt("shown", 0),
+        dropped = o.optInt("dropped", 0),
+        audioLate = o.optInt("audio_late", 0),
+        audioDropped = o.optInt("audio_dropped", 0),
     )
 }
 

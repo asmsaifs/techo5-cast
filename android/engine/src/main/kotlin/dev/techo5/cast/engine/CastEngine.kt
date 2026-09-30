@@ -28,6 +28,8 @@ data class CastState(
     val ended: String? = null,
     /** Mirroring the screen: no position, pause or seek. */
     val live: Boolean = false,
+    /** From the Show's reports: true if the picture is arriving well, false if not, null if unknown. */
+    val smooth: Boolean? = null,
 )
 
 /** What to play: a picture stream and, if the sound is a separate stream, that too. */

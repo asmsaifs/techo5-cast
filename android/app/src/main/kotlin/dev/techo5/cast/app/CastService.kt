@@ -19,6 +19,7 @@ import android.os.PowerManager
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import androidx.core.content.IntentCompat
+import dev.techo5.cast.engine.LinkQuality
 import dev.techo5.cast.engine.MirrorEngine
 import dev.techo5.cast.discovery.Device
 import dev.techo5.cast.discovery.DeviceStore
@@ -78,6 +79,8 @@ class CastService : Service() {
     private var lastRetryMs = 0L
     private var rate = RateAdapter()
     private var settings = Settings()
+    private var link_ = LinkQuality()
+    private var smooth: Boolean? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -182,6 +185,8 @@ class CastService : Service() {
     private suspend fun connectMirror(target: Device, projection: MediaProjection, audio: Boolean) {
         timeline = Timeline()
         rate = RateAdapter(settings.fpsSteps)
+        link_ = LinkQuality()
+        smooth = null
         AppLog.i(TAG, "mirroring to ${target.name} (${target.host}:${target.port}), audio $audio, scale ${settings.scale}, up to ${settings.effectiveFps} fps")
         val sender = try {
             dial(target, audio)
@@ -210,11 +215,13 @@ class CastService : Service() {
         ticker = scope.launch {
             while (true) {
                 val state = mirror.state()
-                latest = state
+                smooth = link_.update(state.sender?.device)
+                latest = state.copy(smooth = smooth)
                 state.sender?.let { s ->
-                    rate.update(s.videoSent, s.videoDropped)?.let { mirror.setQuality(mirror.quality, it) }
+                    rate.update(s.videoSent, s.videoDropped + (s.device?.dropped ?: 0))
+                        ?.let { mirror.setQuality(mirror.quality, it) }
                 }
-                if (!reconnecting) Session_.value = Session.Casting(device, title, state)
+                if (!reconnecting) Session_.value = Session.Casting(device, title, latest)
                 delay(1000)
             }
         }
@@ -285,7 +292,7 @@ class CastService : Service() {
      *  end (the Show stopped it). */
     private suspend fun dial(target: Device, audio: Boolean = true): CastSender = withContext(Dispatchers.IO) {
         CastSender.connect(
-            target.host, target.port, target.key, android.os.Build.MODEL, settings.scale,
+            target.host, target.port, target.key, android.os.Build.MODEL, settings.scale, title,
             video = true, audio = audio, timeline = timeline,
         ) { ended ->
             // From a network thread.
@@ -349,6 +356,8 @@ class CastService : Service() {
     private suspend fun connect(target: Device, item: PlayItem) {
         timeline = Timeline()
         rate = RateAdapter(settings.fpsSteps)
+        link_ = LinkQuality()
+        smooth = null
         AppLog.i(TAG, "connecting to ${target.name} (${target.host}:${target.port}), scale ${settings.scale}, up to ${settings.effectiveFps} fps, jpeg ${settings.effectiveQuality}")
         val sender = try {
             dial(target)
@@ -365,15 +374,18 @@ class CastService : Service() {
         AppLog.i(TAG, "casting to ${target.name}: $title")
         engine.onSourceError = ::retrySource
         engine.play(item) { state ->
-            latest = state
-            if (!reconnecting) Session_.value = Session.Casting(device, title, state)
+            latest = state.copy(smooth = smooth)
+            if (!reconnecting) Session_.value = Session.Casting(device, title, latest)
             state.ended?.let { finish(it) }
         }
         ticker = scope.launch {
             while (true) {
+                smooth = link_.update(latest.sender?.device)
                 engine.publish()
                 latest.sender?.let { s ->
-                    rate.update(s.videoSent, s.videoDropped)?.let { engine.setQuality(engine.quality, it) }
+                    // What the Show drops counts with what the phone does: both mean too much is sent.
+                    rate.update(s.videoSent, s.videoDropped + (s.device?.dropped ?: 0))
+                        ?.let { engine.setQuality(engine.quality, it) }
                 }
                 if (!reconnecting) notify(notification(device, title, latest.playing))
                 delay(1000)

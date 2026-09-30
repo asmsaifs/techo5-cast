@@ -91,7 +91,7 @@ class WireTest {
                 socket.tcpNoDelay = true
                 val secure = dial(socket, key)
 
-                val hello = Hello(name = "kotlin-test", video = true, audio = true, rate = 48000, channels = 2, scale = 2)
+                val hello = Hello(name = "kotlin-test", video = true, audio = true, rate = 48000, channels = 2, scale = 2, title = "Big Buck Bunny")
                 secure.writeMessage(Kind.HELLO, hello.toJson().toByteArray(Charsets.UTF_8))
                 val echoed = secure.readMessage()
                 assertEquals(Kind.HELLO, echoed.kind)

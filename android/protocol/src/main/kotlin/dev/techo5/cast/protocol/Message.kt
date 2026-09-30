@@ -17,6 +17,7 @@ object Kind {
 
     const val WELCOME: Byte = 0x10
     const val STOP: Byte = 0x11
+    const val STATS: Byte = 0x12
 }
 
 /** The largest message either side accepts: a full-screen JPEG is well under 1 MB. */
@@ -35,7 +36,15 @@ data class Hello(
     val rate: Int = 0,
     val channels: Int = 0,
     val scale: Int = 0,
+    /** What is playing, for the Show to say on its screen for a moment. */
+    val title: String = "",
 )
+
+/**
+ * The Show's report on how the cast is going, about once a second. The counts are totals since the
+ * cast began, so a sender takes differences.
+ */
+data class Stats(val shown: Int, val dropped: Int, val audioLate: Int, val audioDropped: Int)
 
 /** Answers a [Hello]. `w`/`h` are the screen: frames larger than that are refused. */
 data class Welcome(

@@ -3,6 +3,8 @@ package dev.techo5.cast.engine
 import dev.techo5.cast.protocol.Hello
 import dev.techo5.cast.protocol.Kind
 import dev.techo5.cast.protocol.Secure
+import dev.techo5.cast.protocol.Stats
+import dev.techo5.cast.protocol.parseStats
 import dev.techo5.cast.protocol.Welcome
 import dev.techo5.cast.protocol.dial
 import dev.techo5.cast.protocol.parseWelcome
@@ -26,6 +28,8 @@ data class SenderStats(
     val audioDropped: Long,
     val bytesSent: Long,
     val worstWriteMs: Long,
+    /** The Show's own report (frames shown and dropped), or null before the first, or from an older Show. */
+    val device: Stats? = null,
 )
 
 /** Why a cast ended, for the person to read. */
@@ -62,6 +66,7 @@ class CastSender private constructor(
     // move together, so picture and sound stay in step.
     private var shiftUs = 0L
     @Volatile private var closed = false
+    @Volatile private var deviceStats: Stats? = null
 
     private var videoSent = 0L
     private var videoDropped = 0L
@@ -114,7 +119,7 @@ class CastSender private constructor(
     }
 
     fun stats(): SenderStats = synchronized(lock) {
-        SenderStats(videoSent, videoDropped, audioSent, audioDropped, bytesSent, worstWriteMs)
+        SenderStats(videoSent, videoDropped, audioSent, audioDropped, bytesSent, worstWriteMs, deviceStats)
     }
 
     private fun start() {
@@ -214,9 +219,14 @@ class CastSender private constructor(
         try {
             while (!closed) {
                 val m = secure.readMessage()
-                if (m.kind == Kind.STOP) {
-                    end(CastEnded("the Show ended the cast"))
-                    return
+                when (m.kind) {
+                    Kind.STOP -> {
+                        end(CastEnded("the Show ended the cast"))
+                        return
+                    }
+                    Kind.STATS -> try {
+                        deviceStats = parseStats(String(m.payload, Charsets.UTF_8))
+                    } catch (_: Exception) {} // a report we cannot read is not worth a cast
                 }
             }
         } catch (e: Exception) {
@@ -255,6 +265,7 @@ class CastSender private constructor(
             key: String,
             name: String,
             scale: Int,
+            title: String = "",
             video: Boolean,
             audio: Boolean,
             timeline: Timeline,
@@ -268,7 +279,7 @@ class CastSender private constructor(
                 val secure = dial(socket, key)
                 secure.writeMessage(
                     Kind.HELLO,
-                    Hello(name = name, video = video, audio = audio, rate = 48000, channels = 2, scale = scale)
+                    Hello(name = name, video = video, audio = audio, rate = 48000, channels = 2, scale = scale, title = title)
                         .toJson().toByteArray(Charsets.UTF_8),
                 )
                 // The Show may be waiting for somebody there to accept the phone (20 s on its side).

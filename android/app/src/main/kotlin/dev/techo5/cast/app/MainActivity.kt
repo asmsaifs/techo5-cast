@@ -353,6 +353,14 @@ private fun SessionCard(session: Session) {
                         if (st.playing) Tone.Live else Tone.Neutral,
                         Modifier.align(Alignment.TopStart).padding(10.dp),
                     )
+                    // From the Show's own reports: how the picture is arriving there.
+                    st.smooth?.let { ok ->
+                        StatusPill(
+                            if (ok) "Smooth" else "Struggling",
+                            if (ok) Tone.Live else Tone.Warning,
+                            Modifier.align(Alignment.TopEnd).padding(10.dp),
+                        )
+                    }
                 }
                 Column {
                     Text(session.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
