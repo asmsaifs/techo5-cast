@@ -11,7 +11,7 @@ import com.yausername.youtubedl_android.YoutubeDLRequest
  */
 private const val TAG = "extract"
 
-class YtDlpExtractor(context: Context) : Extractor {
+class YtDlpExtractor(context: Context, private val maxHeight: Int = 720) : Extractor {
     private val app = context.applicationContext
 
     @Synchronized
@@ -40,7 +40,7 @@ class YtDlpExtractor(context: Context) : Extractor {
             ready()
             val request = YoutubeDLRequest(url).apply {
                 addOption("--no-playlist")
-                addOption("-f", "bv*[height<=720]+ba/b[height<=720]/b")
+                addOption("-f", "bv*[height<=$maxHeight]+ba/b[height<=$maxHeight]/b")
             }
             val info = YoutubeDL.getInstance().getInfo(request)
             val parts = info.requestedFormats.orEmpty().filter { !it.url.isNullOrEmpty() }

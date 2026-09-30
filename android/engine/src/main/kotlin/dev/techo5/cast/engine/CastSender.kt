@@ -47,6 +47,8 @@ class CastSender private constructor(
     private val secure: Secure,
     private val socket: Socket,
     val welcome: Welcome,
+    /** How many times smaller than the screen the frames are (2 = half size), as asked in the hello. */
+    val scale: Int,
     private val timeline: Timeline,
     private val onEnded: (CastEnded) -> Unit,
 ) : Closeable {
@@ -272,7 +274,7 @@ class CastSender private constructor(
                 val welcome = parseWelcome(String(secure.readMessage().payload, Charsets.UTF_8))
                 if (!welcome.ok) throw Refused(welcome.reason ?: "the Show refused")
                 socket.soTimeout = 0
-                return CastSender(secure, socket, welcome, timeline, onEnded).also { it.start() }
+                return CastSender(secure, socket, welcome, scale, timeline, onEnded).also { it.start() }
             } catch (e: Exception) {
                 try { socket.close() } catch (_: Exception) {}
                 throw e

@@ -47,7 +47,7 @@ class PlayItem(
 class CastEngine(private val context: Context, initialSender: CastSender, private val timeline: Timeline) {
     @Volatile private var sender = initialSender
     private val welcome = initialSender.welcome
-    private val scale = if (welcome.w >= 2 && welcome.h >= 2) 2 else 1
+    private val scale = initialSender.scale.coerceAtLeast(1)
 
     /** Presentation time -> the clock time ExoPlayer said it would release that frame at. */
     private val releases = object : LinkedHashMap<Long, Long>() {

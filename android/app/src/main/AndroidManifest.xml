@@ -35,6 +35,7 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@style/Theme.Intake">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -11,7 +11,6 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.IBinder
-import android.util.Log
 import android.os.PowerManager
 import dev.techo5.cast.discovery.Device
 import dev.techo5.cast.discovery.DeviceStore
@@ -68,6 +67,7 @@ class CastService : Service() {
     private var reconnecting = false
     private var lastRetryMs = 0L
     private var rate = RateAdapter()
+    private var settings = Settings()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -95,6 +95,7 @@ class CastService : Service() {
         }
         stopEngine()
         this.target = target
+        settings = Settings.load(this)
         link = uri.toString().takeIf { (uri.scheme == "http" || uri.scheme == "https") && !isDirectMedia(it) }
         device = target.name
         title = intent.getStringExtra(EXTRA_TITLE) ?: uri.lastPathSegment ?: "Video"
@@ -126,7 +127,7 @@ class CastService : Service() {
     }
 
     private suspend fun extract(link: String): PlayItem {
-        val r = withContext(Dispatchers.IO) { YtDlpExtractor(this@CastService).resolve(link) }
+        val r = withContext(Dispatchers.IO) { YtDlpExtractor(this@CastService, settings.maxHeight).resolve(link) }
         r.title?.let { title = it }
         return PlayItem(Uri.parse(r.video.url), r.audio?.let { Uri.parse(it.url) }, r.video.headers, r.audio?.headers.orEmpty())
     }
@@ -135,7 +136,7 @@ class CastService : Service() {
      *  end (the Show stopped it). */
     private suspend fun dial(target: Device): CastSender = withContext(Dispatchers.IO) {
         CastSender.connect(
-            target.host, target.port, target.key, android.os.Build.MODEL, 2,
+            target.host, target.port, target.key, android.os.Build.MODEL, settings.scale,
             video = true, audio = true, timeline = timeline,
         ) { ended ->
             // From a network thread.
@@ -149,7 +150,7 @@ class CastService : Service() {
         val target = target ?: return
         if (reconnecting) return
         reconnecting = true
-        Log.i(TAG, "connection lost, reconnecting")
+        AppLog.i(TAG, "connection lost, reconnecting")
         val wasPlaying = engine.isPlaying
         engine.pause()
         Session_.value = Session.Connecting(device, "Reconnecting")
@@ -164,7 +165,7 @@ class CastService : Service() {
             } catch (e: Refused) {
                 break
             } catch (e: Exception) {
-                Log.i(TAG, "reconnect attempt failed: ${e.javaClass.simpleName}: ${e.message}")
+                AppLog.i(TAG, "reconnect attempt failed: ${e.javaClass.simpleName}: ${e.message}")
                 delay(1000)
             }
         }
@@ -197,7 +198,8 @@ class CastService : Service() {
 
     private suspend fun connect(target: Device, item: PlayItem) {
         timeline = Timeline()
-        rate = RateAdapter()
+        rate = RateAdapter(settings.fpsSteps)
+        AppLog.i(TAG, "connecting to ${target.name} (${target.host}:${target.port}), scale ${settings.scale}, up to ${settings.effectiveFps} fps, jpeg ${settings.effectiveQuality}")
         val sender = try {
             dial(target)
         } catch (e: Refused) {
@@ -209,6 +211,8 @@ class CastService : Service() {
         }
         val engine = CastEngine(this, sender, timeline)
         this.engine = engine
+        engine.setQuality(settings.effectiveQuality, rate.fps)
+        AppLog.i(TAG, "casting to ${target.name}: $title")
         engine.onSourceError = ::retrySource
         engine.play(item) { state ->
             latest = state
@@ -237,7 +241,7 @@ class CastService : Service() {
     }
 
     private fun finish(reason: String?) {
-        Log.i(TAG, "finish: ${reason ?: "stopped"}")
+        AppLog.i(TAG, "finish: ${reason ?: "stopped"}")
         stopEngine()
         Session_.value = Session.Ended(reason)
         releaseLocks()
@@ -254,7 +258,7 @@ class CastService : Service() {
     }
 
     private fun acquireLocks() {
-        if (wakeLock == null) {
+        if (wakeLock == null && settings.keepAwake) {
             wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "techo5cast:cast").apply { acquire() }
         }

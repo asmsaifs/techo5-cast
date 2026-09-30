@@ -26,7 +26,10 @@ class IntakeActivity : Activity() {
         }
         val store = DeviceStore(this)
         val devices = store.all().sortedByDescending { it.id == store.lastUsed }
+        // A share aimed at one Show (its row in the share sheet) needs no picker.
+        val aimed = intent.getStringExtra(Intent.EXTRA_SHORTCUT_ID)?.let { id -> devices.firstOrNull { it.id == id } }
         when {
+            aimed != null -> cast(store, aimed, source)
             devices.isEmpty() -> {
                 toast("Add a Show first.")
                 startActivity(Intent(this, MainActivity::class.java))

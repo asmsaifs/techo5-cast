@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,12 +49,20 @@ import dev.techo5.cast.discovery.discover
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { Surface(Modifier.fillMaxSize()) { Home() } } }
+        setContent {
+            MaterialTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    var settingsOpen by remember { mutableStateOf(false) }
+                    BackHandler(enabled = settingsOpen) { settingsOpen = false }
+                    if (settingsOpen) SettingsScreen { settingsOpen = false } else Home { settingsOpen = true }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun Home() {
+private fun Home(openSettings: () -> Unit) {
     val context = LocalContext.current
     val store = remember { DeviceStore(context) }
     var saved by remember { mutableStateOf(store.all()) }
@@ -67,9 +76,11 @@ private fun Home() {
     LaunchedEffect(Unit) {
         discover(context).collect { nearby = it }
     }
+    LaunchedEffect(Unit) { Shortcuts.publish(context, saved) }
 
     fun refresh() {
         saved = store.all()
+        Shortcuts.publish(context, saved)
         if (saved.none { it.id == selected }) selected = saved.firstOrNull()?.id
     }
 
@@ -87,12 +98,22 @@ private fun Home() {
         Modifier.padding(horizontal = 16.dp).verticalScroll(rememberScrollState()).padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("TECHO5 Cast", style = MaterialTheme.typography.headlineMedium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("TECHO5 Cast", style = MaterialTheme.typography.headlineMedium)
+            TextButton(onClick = openSettings) { Text("Settings") }
+        }
 
         NowCasting(session)
 
         Text("Your Shows", style = MaterialTheme.typography.titleMedium)
-        if (saved.isEmpty()) Text("None yet. Add one below with its Cast key.")
+        if (saved.isEmpty()) Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Getting started", style = MaterialTheme.typography.titleSmall)
+                Text("1. On the Show, turn Cast on and set its key (cast_key in Home Assistant).")
+                Text("2. Add the Show below with that key. Keep the phone on the same Wi-Fi.")
+                Text("3. In YouTube or any video app, tap Share and pick TECHO5 Cast. Or tap Cast a file.")
+            }
+        }
         for (d in saved) {
             val here = nearby.any { it.host == d.host }
             Card(Modifier.fillMaxWidth()) {
