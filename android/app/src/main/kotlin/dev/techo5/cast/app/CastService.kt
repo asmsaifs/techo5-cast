@@ -201,7 +201,7 @@ class CastService : Service() {
         }
         val dm = screenSize()
         val mirror = MirrorEngine(
-            sender, timeline, projection, dm.widthPixels, dm.heightPixels, dm.densityDpi, audio,
+            sender, timeline, projection, dm.widthPixels, dm.heightPixels, dm.densityDpi, audio, this,
         ) { reason -> scope.launch { finish(reason) } }
         this.mirror = mirror
         mirror.setQuality(settings.effectiveQuality, rate.fps)

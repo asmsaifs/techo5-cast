@@ -1,10 +1,12 @@
 package dev.techo5.cast.engine
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.projection.MediaProjection
@@ -44,6 +46,7 @@ class MirrorEngine(
     private val screenH: Int,
     private val densityDpi: Int,
     val audio: Boolean,
+    context: Context,
     private val onEnded: (String) -> Unit,
 ) {
     @Volatile private var sender = initialSender
@@ -60,6 +63,8 @@ class MirrorEngine(
     private var display: VirtualDisplay? = null
     private var record: AudioRecord? = null
     private var audioThread: Thread? = null
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private var mutedPhone = false
 
     private val projectionCallback = object : MediaProjection.Callback() {
         // The person ended it from the system's "sharing your screen" chip or notification.
@@ -129,6 +134,12 @@ class MirrorEngine(
         record = rec
         rec.startRecording()
         audioThread = Thread(::audioLoop, "mirror-audio").also { it.start() }
+        // Playback capture copies the sound and leaves the phone playing it; the Show should be the
+        // only place it is heard, so the media stream is muted until the mirror ends.
+        if (!audioManager.isStreamMute(AudioManager.STREAM_MUSIC)) {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+            mutedPhone = true
+        }
     }
 
     /** Reads are paced by the sound arriving, so a chunk is stamped with the moment it was heard; the
@@ -174,6 +185,10 @@ class MirrorEngine(
     fun stop() {
         if (stopped) return
         stopped = true
+        if (mutedPhone) {
+            mutedPhone = false
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+        }
         try { record?.stop() } catch (_: Exception) {}
         record?.release()
         record = null
