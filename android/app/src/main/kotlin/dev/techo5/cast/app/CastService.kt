@@ -11,12 +11,15 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.IBinder
+import android.util.Log
 import android.os.PowerManager
 import dev.techo5.cast.discovery.Device
 import dev.techo5.cast.discovery.DeviceStore
 import dev.techo5.cast.engine.CastEngine
 import dev.techo5.cast.engine.CastSender
+import androidx.media3.common.PlaybackException
 import dev.techo5.cast.engine.CastState
+import dev.techo5.cast.engine.RateAdapter
 import dev.techo5.cast.engine.PlayItem
 import dev.techo5.cast.extract.ExtractFailed
 import dev.techo5.cast.extract.YtDlpExtractor
@@ -33,6 +36,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private const val TAG = "castsvc"
 
 /** What the app shows about the cast in progress. */
 sealed interface Session {
@@ -57,6 +62,12 @@ class CastService : Service() {
     private var device = ""
     private var title = ""
     private var latest = CastState()
+    private var target: Device? = null
+    private var timeline = Timeline()
+    private var link: String? = null
+    private var reconnecting = false
+    private var lastRetryMs = 0L
+    private var rate = RateAdapter()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -83,6 +94,8 @@ class CastService : Service() {
             return
         }
         stopEngine()
+        this.target = target
+        link = uri.toString().takeIf { (uri.scheme == "http" || uri.scheme == "https") && !isDirectMedia(it) }
         device = target.name
         title = intent.getStringExtra(EXTRA_TITLE) ?: uri.lastPathSegment ?: "Video"
         Session_.value = Session.Connecting(device)
@@ -101,35 +114,92 @@ class CastService : Service() {
     /** A web link goes through the extractor; a file or a direct media link plays as it is. Null after
      *  ending the cast with the reason. */
     private suspend fun resolve(uri: Uri): PlayItem? {
-        val link = uri.toString()
-        if (uri.scheme != "http" && uri.scheme != "https" || isDirectMedia(link)) return PlayItem(uri)
+        val link = link ?: return PlayItem(uri)
         Session_.value = Session.Connecting(device, "Getting the video")
         notify(notification("Getting the video…", title, false))
         return try {
-            val r = withContext(Dispatchers.IO) { YtDlpExtractor(this@CastService).resolve(link) }
-            r.title?.let { title = it }
-            PlayItem(
-                Uri.parse(r.video.url), r.audio?.let { Uri.parse(it.url) }, r.video.headers, r.audio?.headers.orEmpty(),
-            )
+            extract(link)
         } catch (e: ExtractFailed) {
             finish(e.message)
             null
         }
     }
 
-    private suspend fun connect(target: Device, item: PlayItem) {
-        val timeline = Timeline()
-        var created: CastEngine? = null
-        val sender = try {
-            withContext(Dispatchers.IO) {
-                CastSender.connect(
-                    target.host, target.port, target.key, android.os.Build.MODEL, 2,
-                    video = true, audio = true, timeline = timeline,
-                ) { ended ->
-                    // From a network thread.
-                    scope.launch { finish(ended.reason) }
-                }
+    private suspend fun extract(link: String): PlayItem {
+        val r = withContext(Dispatchers.IO) { YtDlpExtractor(this@CastService).resolve(link) }
+        r.title?.let { title = it }
+        return PlayItem(Uri.parse(r.video.url), r.audio?.let { Uri.parse(it.url) }, r.video.headers, r.audio?.headers.orEmpty())
+    }
+
+    /** Dials the Show. Ends of the connection are reported as a lost link (worth a reconnect) or an
+     *  end (the Show stopped it). */
+    private suspend fun dial(target: Device): CastSender = withContext(Dispatchers.IO) {
+        CastSender.connect(
+            target.host, target.port, target.key, android.os.Build.MODEL, 2,
+            video = true, audio = true, timeline = timeline,
+        ) { ended ->
+            // From a network thread.
+            scope.launch { if (ended.lost) reconnect() else finish(ended.reason) }
+        }
+    }
+
+    /** The link dropped: pause, and try for about half a minute to pick up where we were. */
+    private suspend fun reconnect() {
+        val engine = engine ?: return
+        val target = target ?: return
+        if (reconnecting) return
+        reconnecting = true
+        Log.i(TAG, "connection lost, reconnecting")
+        val wasPlaying = engine.isPlaying
+        engine.pause()
+        Session_.value = Session.Connecting(device, "Reconnecting")
+        notify(notification("Reconnecting to $device…", title, false))
+        val deadline = System.currentTimeMillis() + RECONNECT_MS
+        while (this.engine === engine && System.currentTimeMillis() < deadline) {
+            try {
+                engine.replaceSender(dial(target))
+                if (wasPlaying) engine.resume()
+                reconnecting = false
+                return
+            } catch (e: Refused) {
+                break
+            } catch (e: Exception) {
+                Log.i(TAG, "reconnect attempt failed: ${e.javaClass.simpleName}: ${e.message}")
+                delay(1000)
             }
+        }
+        reconnecting = false
+        if (this.engine === engine) finish("Lost the connection to $device.")
+    }
+
+    /** An expired or refused stream link: get a fresh one and go on from the same second, once in a
+     *  while. Returns true if a retry was started. */
+    private fun retrySource(error: PlaybackException, positionMs: Long): Boolean {
+        val link = link ?: return false
+        val engine = engine ?: return false
+        val retryable = error.errorCode in setOf(
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        )
+        val now = System.currentTimeMillis()
+        if (!retryable || now - lastRetryMs < 30_000) return false
+        lastRetryMs = now
+        scope.launch {
+            try {
+                engine.load(extract(link), positionMs)
+            } catch (e: ExtractFailed) {
+                finish(e.message)
+            }
+        }
+        return true
+    }
+
+    private suspend fun connect(target: Device, item: PlayItem) {
+        timeline = Timeline()
+        rate = RateAdapter()
+        val sender = try {
+            dial(target)
         } catch (e: Refused) {
             finish("$device refused: ${e.message}")
             return
@@ -137,17 +207,21 @@ class CastService : Service() {
             finish(explain(e))
             return
         }
-        val engine = CastEngine(this, sender, timeline).also { created = it }
+        val engine = CastEngine(this, sender, timeline)
         this.engine = engine
+        engine.onSourceError = ::retrySource
         engine.play(item) { state ->
             latest = state
-            Session_.value = Session.Casting(device, title, state)
+            if (!reconnecting) Session_.value = Session.Casting(device, title, state)
             state.ended?.let { finish(it) }
         }
         ticker = scope.launch {
             while (true) {
                 engine.publish()
-                notify(notification(device, title, latest.playing))
+                latest.sender?.let { s ->
+                    rate.update(s.videoSent, s.videoDropped)?.let { engine.setQuality(engine.quality, it) }
+                }
+                if (!reconnecting) notify(notification(device, title, latest.playing))
                 delay(1000)
             }
         }
@@ -163,6 +237,7 @@ class CastService : Service() {
     }
 
     private fun finish(reason: String?) {
+        Log.i(TAG, "finish: ${reason ?: "stopped"}")
         stopEngine()
         Session_.value = Session.Ended(reason)
         releaseLocks()
@@ -244,6 +319,8 @@ class CastService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_POSITION_MS = "position_ms"
         private const val CHANNEL = "casting"
+        // Wi-Fi coming back plus the Show noticing its old session is dead (about 10 s of silence).
+        private const val RECONNECT_MS = 30_000L
         private const val NOTIFICATION_ID = 1
 
         private val Session_ = MutableStateFlow<Session>(Session.Idle)

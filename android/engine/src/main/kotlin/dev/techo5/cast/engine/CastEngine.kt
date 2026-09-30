@@ -44,8 +44,9 @@ class PlayItem(
  *          -> audio chain -> [AudioTap] -> PCM -----+-> [CastSender] -> the Show
  *   [Timeline]: the player's per-frame release times give both streams one clock
  */
-class CastEngine(private val context: Context, private val sender: CastSender, private val timeline: Timeline) {
-    private val welcome = sender.welcome
+class CastEngine(private val context: Context, initialSender: CastSender, private val timeline: Timeline) {
+    @Volatile private var sender = initialSender
+    private val welcome = initialSender.welcome
     private val scale = if (welcome.w >= 2 && welcome.h >= 2) 2 else 1
 
     /** Presentation time -> the clock time ExoPlayer said it would release that frame at. */
@@ -57,14 +58,39 @@ class CastEngine(private val context: Context, private val sender: CastSender, p
         outW = welcome.w / scale,
         outH = welcome.h / scale,
         stampFor = { pts -> synchronized(releases) { releases[pts] } ?: nowUs() },
-        onFrame = { stamp, jpeg -> sender.offerVideo(stamp, jpeg) },
+        onFrame = { stamp, jpeg -> this.sender.offerVideo(stamp, jpeg) },
     )
-    private val tap = AudioTap(timeline) { sender.offerAudio(it) }
+    private val tap = AudioTap(timeline) { this.sender.offerAudio(it) }
     private var player: ExoPlayer? = null
     private var onState: (CastState) -> Unit = {}
     private var endedReason: String? = null
 
     val quality: Int get() = grabber.quality
+    val maxFps: Int get() = grabber.maxFps
+
+    /** Called when the player fails, with the position; true if it took care of it (a retry), so the
+     *  cast is not ended. */
+    var onSourceError: ((PlaybackException, Long) -> Boolean)? = null
+
+    val isPlaying: Boolean get() = player?.isPlaying == true
+
+    /** After a lost connection: carry on to a new [CastSender] at the same place. */
+    fun replaceSender(next: CastSender) {
+        val old = sender
+        sender = next
+        old.close()
+        timeline.invalidate()
+    }
+
+    /** Starts [item] again from [startMs] (expired links: extracted afresh). */
+    fun load(item: PlayItem, startMs: Long) {
+        val p = player ?: return
+        timeline.newEpoch()
+        sender.clearQueued()
+        p.setMediaSource(mediaSource(item), startMs)
+        p.prepare()
+        p.playWhenReady = true
+    }
 
     fun setQuality(jpegQuality: Int, maxFps: Int) {
         grabber.quality = jpegQuality
@@ -99,6 +125,7 @@ class CastEngine(private val context: Context, private val sender: CastSender, p
                 // Everything decoded before a pause is still to be played after it, but when it plays is
                 // new: the mapping is re-made from the first frame after.
                 timeline.invalidate()
+                sender.resetShift()
                 publish()
             }
 
@@ -114,6 +141,7 @@ class CastEngine(private val context: Context, private val sender: CastSender, p
             override fun onPlaybackStateChanged(state: Int) = publish()
 
             override fun onPlayerError(error: PlaybackException) {
+                if (onSourceError?.invoke(error, p.currentPosition) == true) return
                 end("can't play this: ${error.errorCodeName}")
             }
         })

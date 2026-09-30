@@ -29,7 +29,7 @@ data class SenderStats(
 )
 
 /** Why a cast ended, for the person to read. */
-class CastEnded(val reason: String)
+class CastEnded(val reason: String, val lost: Boolean = false)
 
 /**
  * The connection to the Show and the loop that feeds it (docs/android-app-plan.md 5.5).
@@ -55,10 +55,10 @@ class CastSender private constructor(
     private var video: Pair<Long, ByteArray>? = null
     private val audio = ArrayDeque<AudioChunk>()
     private var audioWaitingSince = 0L
-    // Where the last audio chunk was placed, so the next can follow it exactly (see pickNext).
-    private var lastAudioEpoch = -1
-    private var lastAudioMediaUs = 0L
-    private var lastAudioStampUs = 0L
+    private val stamper = AudioStamper()
+    // How far behind real time everything is being shown, after stalls (see pickNext). Both streams
+    // move together, so picture and sound stay in step.
+    private var shiftUs = 0L
     @Volatile private var closed = false
 
     private var videoSent = 0L
@@ -98,6 +98,16 @@ class CastSender private constructor(
             video = null
             audioDropped += audio.size
             audio.clear()
+            shiftUs = 0
+            stamper.forget()
+        }
+    }
+
+    /** Back on real time: after a pause or a seek, whatever delay a stall added no longer applies. */
+    fun resetShift() {
+        synchronized(lock) {
+            shiftUs = 0
+            stamper.forget()
         }
     }
 
@@ -136,7 +146,7 @@ class CastSender private constructor(
                 }
             }
         } catch (e: Exception) {
-            if (!closed) end(CastEnded("connection lost: ${e.message}"))
+            if (!closed) end(CastEnded("connection lost: ${e.message}", lost = true))
         }
     }
 
@@ -146,7 +156,7 @@ class CastSender private constructor(
     private fun pickNext(now: Long): Outgoing? = synchronized(lock) {
         // Video: drop it if it is late, otherwise it is ready with its stamp.
         video?.let { (stamp, _) ->
-            if (stamp < now - LATE_VIDEO_US) { video = null; videoDropped++ }
+            if (stamp + shiftUs < now - LATE_VIDEO_US) { video = null; videoDropped++ }
         }
         // Audio: place the head on the clock. Old epoch: from before a seek, drop. No anchor yet: wait
         // for the first video frame's, or, for a file with no picture, give up waiting and anchor on now.
@@ -154,26 +164,34 @@ class CastSender private constructor(
         while (true) {
             val head = audio.peek() ?: break
             if (head.epoch != timeline.epoch) { audio.poll(); audioDropped++; continue }
-            val at = timeline.clockFor(head.epoch, head.mediaUs)
-            if (at == null) {
+            val raw = timeline.clockFor(head.epoch, head.mediaUs)
+            if (raw == null) {
                 if (now - audioWaitingSince > ANCHOR_WAIT_US) {
                     timeline.anchor(head.mediaUs, now + aheadUs / 2)
                     continue
                 }
                 break
             }
-            if (at < now - LATE_AUDIO_US) { audio.poll(); audioDropped++; continue }
-            // The timeline is re-made from every video frame, and their release times jitter by a few
-            // ms. The device places a chunk by its stamp to the frame, so following that jitter leaves
-            // gaps and overlaps: ticks. Chunks are contiguous in the clip, so stamp each right after
-            // the last, and follow the timeline only when it has moved for real (a pause, a stall).
-            val follow = lastAudioStampUs + (head.mediaUs - lastAudioMediaUs)
-            audioStamp = if (head.epoch == lastAudioEpoch && kotlin.math.abs(at - follow) < AUDIO_RESYNC_US) follow else at
+            var at = raw + shiftUs
+            if (at < now - STALL_US) {
+                // Behind by more than a hiccup: the link or the player stalled. Rather than throw sound
+                // away, show everything later by the delay, picture and sound together, up to a cap.
+                val late = now - at
+                if (shiftUs + late <= MAX_SHIFT_US) {
+                    shiftUs += late
+                    at += late
+                    stamper.forget()
+                } else {
+                    audio.poll(); audioDropped++; continue
+                }
+            }
+            audioStamp = stamper.stampFor(head.epoch, head.mediaUs, at)
             break
         }
         val v = video
-        val pickVideo = v != null && (audioStamp == null || v.first <= audioStamp)
-        val stamp = if (pickVideo) v!!.first else audioStamp
+        val videoStamp = v?.let { it.first + shiftUs }
+        val pickVideo = v != null && (audioStamp == null || videoStamp!! <= audioStamp)
+        val stamp = if (pickVideo) videoStamp else audioStamp
         if (stamp == null || stamp - now > aheadUs) {
             // Nothing due: wait for news or for time to pass, but not long: the clock message is due too.
             lock.wait(if (stamp == null) 20 else ((stamp - now - aheadUs) / 1000).coerceIn(1, 20))
@@ -184,9 +202,7 @@ class CastSender private constructor(
             Outgoing(stamp, v!!.second, null)
         } else {
             val chunk = audio.poll()!!
-            lastAudioEpoch = chunk.epoch
-            lastAudioMediaUs = chunk.mediaUs
-            lastAudioStampUs = stamp
+            stamper.placed(chunk.epoch, chunk.mediaUs, stamp)
             audioWaitingSince = now
             Outgoing(stamp, null, chunk.pcm)
         }
@@ -202,7 +218,7 @@ class CastSender private constructor(
                 }
             }
         } catch (e: Exception) {
-            if (!closed) end(CastEnded("connection lost: ${e.message}"))
+            if (!closed) end(CastEnded("connection lost: ${e.message}", lost = true))
         }
     }
 
@@ -222,8 +238,8 @@ class CastSender private constructor(
 
     companion object {
         private const val LATE_VIDEO_US = 100_000L
-        private const val LATE_AUDIO_US = 400_000L
-        private const val AUDIO_RESYNC_US = 30_000L
+        private const val STALL_US = 300_000L
+        private const val MAX_SHIFT_US = 5_000_000L
         private const val ANCHOR_WAIT_US = 500_000L
         private const val MAX_AUDIO_CHUNKS = 200 // 4 s
 

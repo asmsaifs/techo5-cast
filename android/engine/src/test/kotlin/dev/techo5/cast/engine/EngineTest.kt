@@ -83,3 +83,72 @@ class ResamplerTest {
         assertTrue("step $worst", worst < 700)
     }
 }
+
+class AudioStamperTest {
+    @Test
+    fun jitterInTheTimelineDoesNotMoveChunks() {
+        val s = AudioStamper()
+        val first = s.stampFor(0, 0, 1_000_000)
+        s.placed(0, 0, first)
+        // The next chunk is 20 ms on; the timeline says 8 ms later than that.
+        val second = s.stampFor(0, 20_000, 1_028_000)
+        assertEquals(1_020_000L, second)
+        s.placed(0, 20_000, second)
+        assertEquals(1_040_000L, s.stampFor(0, 40_000, 1_035_000))
+    }
+
+    @Test
+    fun aRealJumpIsFollowed() {
+        val s = AudioStamper()
+        s.placed(0, 0, 1_000_000)
+        // A stall moved the timeline by 400 ms.
+        assertEquals(1_420_000L, s.stampFor(0, 20_000, 1_420_000))
+    }
+
+    @Test
+    fun aNewEpochOrForgetStartsFromTheTimeline() {
+        val s = AudioStamper()
+        s.placed(0, 0, 1_000_000)
+        assertEquals(5_000_000L, s.stampFor(1, 0, 5_000_000))
+        s.placed(1, 0, 5_000_000)
+        s.forget()
+        assertEquals(5_025_000L, s.stampFor(1, 20_000, 5_025_000))
+    }
+}
+
+class RateAdapterTest {
+    @Test
+    fun dropsAStepAfterTwoBadSeconds() {
+        val r = RateAdapter()
+        assertNull(r.update(20, 10)) // first bad second
+        assertEquals(24, r.update(40, 20))
+        assertEquals(24, r.fps)
+    }
+
+    @Test
+    fun aCleanSecondBreaksTheRun() {
+        val r = RateAdapter()
+        assertNull(r.update(20, 10))
+        assertNull(r.update(50, 10)) // clean
+        assertNull(r.update(70, 20)) // bad again, but only once in a row
+        assertEquals(30, r.fps)
+    }
+
+    @Test
+    fun stepsBackUpAfterAQuietMinute() {
+        val r = RateAdapter()
+        r.update(20, 10); r.update(40, 20) // down to 24
+        var sent = 40L
+        var changed: Int? = null
+        repeat(60) { sent += 24; changed = r.update(sent, 20) }
+        assertEquals(30, changed)
+    }
+
+    @Test
+    fun neverBelowTheLastStep() {
+        val r = RateAdapter()
+        var sent = 0L; var dropped = 0L
+        repeat(20) { sent += 10; dropped += 10; r.update(sent, dropped) }
+        assertEquals(15, r.fps)
+    }
+}
