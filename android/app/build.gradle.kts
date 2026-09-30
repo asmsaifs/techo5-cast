@@ -2,11 +2,21 @@
 // itself (ART's crypto and networking, not just a desktop JVM) against a real device. The engine
 // (ExoPlayer capture, the timeline, the send loop) and the rest of android-app-plan.md's screens come
 // after this is proven.
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Release signing comes from the environment (CI) or android/keystore.properties (your own machine,
+// git-ignored); with neither, the release build is unsigned, which is what F-Droid wants (it signs
+// its own). See docs/releasing.md.
+val keystoreProps = Properties().apply {
+    rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+}
+fun signingValue(env: String, prop: String): String? = System.getenv(env) ?: keystoreProps.getProperty(prop)
 
 android {
     namespace = "dev.techo5.cast.app"
@@ -16,13 +26,43 @@ android {
         applicationId = "dev.techo5.cast.app"
         minSdk = 29 // mirror mode (AudioPlaybackCaptureConfiguration) needs this; see android-app-plan.md §2
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.1-spike"
+        // A release sets these from its tag (-PversionName=0.1.0 -PversionCode=100).
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 100
+        versionName = (findProperty("versionName") as String?) ?: "0.1.0"
+    }
+
+    val releaseStore = signingValue("CAST_KEYSTORE", "storeFile")
+    if (releaseStore != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = signingValue("CAST_KEYSTORE_PASSWORD", "storePassword")
+                keyAlias = signingValue("CAST_KEY_ALIAS", "keyAlias")
+                keyPassword = signingValue("CAST_KEY_PASSWORD", "keyPassword")
+            }
+        }
+    }
+
+    // One APK per CPU, plus a universal one: yt-dlp's Python runtime is most of the size, and a phone
+    // only needs its own. Only for release builds, so a debug build is still one app-debug.apk.
+    splits {
+        abi {
+            isEnable = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
+        }
     }
 
     buildTypes {
         debug {
             isMinifyEnabled = false
+        }
+        release {
+            // Not shrunk: yt-dlp's runtime and the Noise library are loaded by name, and a release
+            // that only works unminified is worth more here than a smaller one that might not.
+            isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 

@@ -134,7 +134,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
                 if (licences) {
                     Text(
-                        "Media3 / ExoPlayer: Apache 2.0\nyoutubedl-android: GPL 3.0\nyt-dlp: Unlicense\nnoise-java: MIT\n" +
+                        "TECHO5 Cast: GPL 3.0\nMedia3 / ExoPlayer: Apache 2.0\nzxing-android-embedded: Apache 2.0\nyoutubedl-android: GPL 3.0\nyt-dlp: Unlicense\nnoise-java: MIT\n" +
                             "Jetpack Compose and AndroidX: Apache 2.0\nManrope and Inter fonts: SIL Open Font License 1.1\n" +
                             "The protocol and castsend: MIT",
                         Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),

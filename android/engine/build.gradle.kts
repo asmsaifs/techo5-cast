@@ -22,6 +22,12 @@ android {
         jvmTarget = "17"
     }
 
+    lint {
+        // The engine is built on Media3's audio-processor and frame-metadata hooks, which are marked
+        // unstable: using them is the point, and media3 is pinned in the version catalog.
+        disable += "UnsafeOptInUsageError"
+    }
+
     // Same as :app: Android provides org.json itself.
     configurations.all {
         exclude(group = "org.json", module = "json")

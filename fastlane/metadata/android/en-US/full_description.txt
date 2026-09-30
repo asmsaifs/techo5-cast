@@ -1,0 +1,20 @@
+Share a YouTube video, a link from almost any video site, or a video file on your phone to a TECHO5 Echo Show, and it plays there with picture and sound. Or mirror your whole screen, or one app, with its sound.
+
+Nothing runs in between: the phone decodes the video and sends small JPEG frames and audio over your own Wi-Fi, encrypted, to the Show.
+
+<b>How it works</b>
+- In YouTube (or any video app), tap Share and pick TECHO5 Cast.
+- Pause, seek and stop from the notification, the lock screen or the app.
+- Mirror screen: a button in the app and a quick-settings tile.
+- Pairing is one scan: the Show draws a QR code, the app reads it.
+- The Show asks you to Accept or Decline before a phone casts.
+
+<b>What it can't do</b>
+- Protected video (Netflix, Prime Video, Disney+ and other DRM) can't be played, and shows black when mirrored.
+- It does not appear in YouTube's own Cast button. That is Google's protocol, and the Show can't be a receiver.
+- Age-restricted, private and members-only videos need a sign-in the app doesn't have.
+
+<b>Notes</b>
+- Needs a TECHO5 Show with Cast turned on. The Show's software is at github.com/HuskerMinion/techo5.
+- Links are turned into streams with yt-dlp, running on the phone. That goes around YouTube's own player, which their terms don't allow, so this app is not on Google Play.
+- No accounts, no analytics, no ads. The phone only talks to the Show and to the sites of the videos you cast.

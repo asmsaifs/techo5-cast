@@ -1,0 +1,8 @@
+First release.
+
+- Cast a YouTube link, another site's video link, or a video file to a TECHO5 Echo Show
+- Share from any app, or paste a link, or pick a file
+- Pause, seek and stop from the notification
+- Mirror the screen (or one app) with sound, from the app or a quick-settings tile
+- Pair by scanning the QR code the Show draws; the Show asks before a phone casts
+- Survives a Wi-Fi drop; steps the frame rate down when the Show drops frames

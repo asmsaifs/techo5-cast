@@ -4,6 +4,11 @@ The phone half of techo5-cast: an app that sends a video, or the whole screen, t
 over the protocol in [protocol.md](protocol.md). This plan is written before any app code. The device
 side and `castsend` already work; what is left is the phone.
 
+> **Status (2026-09-30):** M0 to M6 are built and were run on a Nothing Phone (2) and an Echo Show 5.
+> M7 is the release machinery: CI, signed APKs from a tag, store text, licences and the README
+> ([releasing.md](releasing.md)). Not yet done: the first tag, and the Show's receiver in a signed
+> TECHO5 release. F-Droid's main repository will not take yt-dlp's prebuilt runtime (section 9).
+
 ## 1. Goal
 
 From a phone, in a few taps:

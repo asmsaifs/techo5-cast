@@ -1,0 +1,37 @@
+# A draft of the F-Droid build recipe (fdroiddata: metadata/dev.techo5.cast.app.yml). It is kept here so
+# it travels with the source; see docs/releasing.md for what stands between this app and F-Droid's
+# main repository (yt-dlp's prebuilt runtime) and the other ways to distribute it.
+Categories:
+  - Multimedia
+  - Connectivity
+License: GPL-3.0-only
+AuthorName: ASM Saiful Islam Chowdhury
+WebSite: https://github.com/asmsaifs/techo5-cast
+SourceCode: https://github.com/asmsaifs/techo5-cast
+IssueTracker: https://github.com/asmsaifs/techo5-cast/issues
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: Plays videos from YouTube and other sites that are not free network services.
+
+AutoName: TECHO5 Cast
+
+RepoType: git
+Repo: https://github.com/asmsaifs/techo5-cast.git
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 100
+    commit: v0.1.0
+    subdir: android/app
+    gradle:
+      - yes
+    # The release workflow derives the version from the tag; F-Droid builds it the same way.
+    gradleprops:
+      - versionName=0.1.0
+      - versionCode=100
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+CurrentVersion: 0.1.0
+CurrentVersionCode: 100

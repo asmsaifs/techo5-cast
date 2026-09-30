@@ -87,7 +87,6 @@ class MirrorEngine(
         timeline.anchor(0, 0)
     }
 
-    @SuppressLint("MissingPermission") // RECORD_AUDIO is checked by the caller, which passes audio = false without it
     fun start() {
         val (w, h) = fitEven(screenW, screenH, welcome.w, welcome.h)
         val surface = grabber.start(w, h)
@@ -108,6 +107,7 @@ class MirrorEngine(
         display?.resize(w, h, newDensityDpi)
     }
 
+    @SuppressLint("MissingPermission") // RECORD_AUDIO is checked by the caller, which passes audio = false without it
     private fun startAudio() {
         val config = AudioPlaybackCaptureConfiguration.Builder(projection)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)

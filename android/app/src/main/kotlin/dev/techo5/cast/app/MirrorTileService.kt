@@ -1,5 +1,6 @@
 package dev.techo5.cast.app
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -13,6 +14,8 @@ import android.service.quicksettings.TileService
 class MirrorTileService : TileService() {
     override fun onStartListening() = update()
 
+    // The Intent form of startActivityAndCollapse is the only one before Android 14.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         val session = CastService.session.value
         if (session is Session.Casting && session.state.live) {
