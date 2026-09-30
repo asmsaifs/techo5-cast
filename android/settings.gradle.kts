@@ -18,4 +18,5 @@ rootProject.name = "techo5-cast-android"
 
 include(":protocol")
 include(":engine")
+include(":discovery")
 include(":app")

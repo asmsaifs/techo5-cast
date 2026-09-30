@@ -50,6 +50,8 @@ android {
 dependencies {
     implementation(project(":engine"))
     implementation(project(":protocol"))
+    implementation(project(":discovery"))
+    implementation(libs.kotlinx.coroutines.core)
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")

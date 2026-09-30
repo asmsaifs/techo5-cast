@@ -1,218 +1,227 @@
 package dev.techo5.cast.app
 
-import android.content.Context
+import android.Manifest
 import android.net.Uri
 import android.os.Bundle
-import android.view.WindowManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Row
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.platform.LocalContext
-import dev.techo5.cast.engine.CastEngine
-import dev.techo5.cast.engine.CastSender
-import dev.techo5.cast.engine.CastState
-import dev.techo5.cast.engine.Timeline
-import kotlinx.coroutines.delay
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import dev.techo5.cast.protocol.Hello
-import dev.techo5.cast.protocol.Kind
-import dev.techo5.cast.protocol.dial
-import dev.techo5.cast.protocol.parseWelcome
-import dev.techo5.cast.protocol.readMessage
-import dev.techo5.cast.protocol.stamp
-import dev.techo5.cast.protocol.toJson
-import dev.techo5.cast.protocol.writeMessage
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.Socket
-import kotlin.random.Random
+import dev.techo5.cast.discovery.Device
+import dev.techo5.cast.discovery.DeviceStore
+import dev.techo5.cast.discovery.Found
+import dev.techo5.cast.discovery.discover
 
 /**
- * The M0 spike's only screen: dial a device, send a hello and a made-up frame and audio chunk, show
- * what came back. This is here to prove the protocol module — the Noise handshake and message
- * framing in particular — on Android's own runtime and network stack, not just a desktop JVM (that
- * proof is [dev.techo5.cast.protocol.RealDeviceSmokeTest], which this screen mirrors). Nothing here
- * is the app described in `docs/android-app-plan.md`; the engine (ExoPlayer capture, the timeline,
- * mirroring) comes next.
+ * The one screen (docs/android-app-plan.md 3.3, 10): the Shows saved and nearby, a way to add one with
+ * its key, "Cast a file", and the cast in progress with its controls. The casting itself runs in
+ * [CastService], so leaving the app does not stop it.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // The spike holds the engine in the activity, so the screen must stay on; M1 moves it into a
-        // foreground service and this goes away.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContent { App() }
+        setContent { MaterialTheme { Surface(Modifier.fillMaxSize()) { Home() } } }
     }
 }
 
 @Composable
-private fun App() {
+private fun Home() {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("spike", Context.MODE_PRIVATE) }
-    var addr by remember { mutableStateOf(prefs.getString("addr", "192.168.1.181:8940")!!) }
-    var key by remember { mutableStateOf(prefs.getString("key", "")!!) }
-    var engine by remember { mutableStateOf<CastEngine?>(null) }
-    var state by remember { mutableStateOf<CastState?>(null) }
-    var status by remember { mutableStateOf("") }
-    var log by remember { mutableStateOf("Enter the device's address and Cast key, then Test.") }
-    var running by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val store = remember { DeviceStore(context) }
+    var saved by remember { mutableStateOf(store.all()) }
+    var nearby by remember { mutableStateOf<List<Found>>(emptyList()) }
+    var selected by remember { mutableStateOf<String?>(saved.firstOrNull()?.id) }
+    // A Show to add: its address is filled in, the key is what's missing.
+    var adding by remember { mutableStateOf<Found?>(null) }
+    var addingManually by remember { mutableStateOf(false) }
+    val session by CastService.session.collectAsState()
 
-    fun castFile(uri: Uri) {
-        prefs.edit().putString("addr", addr).putString("key", key).apply()
-        engine?.stop()
-        status = "Connecting…"
-        scope.launch {
-            val timeline = Timeline()
-            val (host, port) = addr.split(":").let { it[0] to it[1].trim().toInt() }
-            lateinit var created: CastEngine
-            val sender = try {
-                withContext(Dispatchers.IO) {
-                    CastSender.connect(host, port, key, android.os.Build.MODEL, 2, video = true, audio = true, timeline = timeline) {
-                        // From a network thread: hop to the main one.
-                        scope.launch { created.end(it.reason) }
-                    }
-                }
-            } catch (e: Exception) {
-                status = "Failed: ${e.message ?: e.javaClass.simpleName}"
-                return@launch
-            }
-            created = CastEngine(context, sender, timeline)
-            engine = created
-            status = "Casting"
-            created.play(uri) { state = it }
-        }
+    LaunchedEffect(Unit) {
+        discover(context).collect { nearby = it }
     }
 
+    fun refresh() {
+        saved = store.all()
+        if (saved.none { it.id == selected }) selected = saved.firstOrNull()?.id
+    }
+
+    // The permission is asked at the first cast; without it the cast still runs, the notification is
+    // just hidden, so the result is not waited for.
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) castFile(uri)
-    }
-
-    LaunchedEffect(engine) {
-        while (engine != null) {
-            engine?.publish()
-            delay(1000)
+        val device = saved.firstOrNull { it.id == selected }
+        if (uri != null && device != null) {
+            CastService.cast(context, uri, device, displayName(context, uri))
         }
     }
 
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("TECHO5 Cast — protocol spike", style = MaterialTheme.typography.titleLarge)
-                OutlinedTextField(value = addr, onValueChange = { addr = it }, label = { Text("Device address (host:port)") })
-                OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("Cast key") })
-                Button(enabled = !running, onClick = {
-                    running = true
-                    log = "Connecting…"
-                    scope.launch {
-                        log = try {
-                            withContext(Dispatchers.IO) { testCast(addr, key) }
-                        } catch (e: Exception) {
-                            "Failed: ${e.javaClass.simpleName}: ${e.message}"
-                        }
-                        running = false
+    Column(
+        Modifier.padding(horizontal = 16.dp).verticalScroll(rememberScrollState()).padding(vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text("TECHO5 Cast", style = MaterialTheme.typography.headlineMedium)
+
+        NowCasting(session)
+
+        Text("Your Shows", style = MaterialTheme.typography.titleMedium)
+        if (saved.isEmpty()) Text("None yet. Add one below with its Cast key.")
+        for (d in saved) {
+            val here = nearby.any { it.host == d.host }
+            Card(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(12.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column {
+                        Text(d.name, style = MaterialTheme.typography.titleSmall)
+                        Text("${d.host}:${d.port}" + if (here) " · nearby" else "")
                     }
-                }) { Text(if (running) "Testing…" else "Test") }
-                Text(log)
-                Button(onClick = { picker.launch(arrayOf("video/*", "audio/*")) }) { Text("Cast a file") }
-                if (engine != null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { if (state?.playing == true) engine?.pause() else engine?.resume() }) {
-                            Text(if (state?.playing == true) "Pause" else "Play")
-                        }
-                        OutlinedButton(onClick = { engine?.seekTo(((state?.positionMs ?: 0) - 10_000).coerceAtLeast(0)) }) { Text("-10 s") }
-                        OutlinedButton(onClick = { engine?.seekTo((state?.positionMs ?: 0) + 10_000) }) { Text("+10 s") }
-                        OutlinedButton(onClick = { engine?.stop(); engine = null; status = "Stopped" }) { Text("Stop") }
+                    Row {
+                        TextButton(onClick = { selected = d.id }) { Text(if (selected == d.id) "Selected" else "Select") }
+                        TextButton(onClick = { store.remove(d.id); refresh() }) { Text("Remove") }
                     }
                 }
-                Text(status)
-                state?.let { st ->
-                    val s = st.sender
-                    Text(
-                        "position ${st.positionMs / 1000}s / ${st.durationMs / 1000}s\n" +
-                            "video sent ${s?.videoSent} dropped ${s?.videoDropped}\n" +
-                            "audio sent ${s?.audioSent} dropped ${s?.audioDropped}\n" +
-                            "bytes ${(s?.bytesSent ?: 0) / 1024} KiB, worst write ${s?.worstWriteMs} ms\n" +
-                            "grab avg %.1f ms, skipped %d".format(st.grabAvgMs, st.grabSkipped) +
-                            (st.ended?.let { "\nENDED: $it" } ?: ""),
+            }
+        }
+
+        val unsaved = nearby.filter { f -> saved.none { it.host == f.host } }
+        if (unsaved.isNotEmpty()) {
+            Text("Found nearby", style = MaterialTheme.typography.titleMedium)
+            for (f in unsaved) {
+                OutlinedButton(onClick = { adding = f; addingManually = false }, Modifier.fillMaxWidth()) {
+                    Text("${f.name} (${f.host})")
+                }
+            }
+        }
+        TextButton(onClick = { addingManually = true; adding = null }) { Text("Add a Show by address") }
+
+        if (adding != null || addingManually) {
+            AddDevice(
+                found = adding,
+                onSave = { store.save(it); selected = it.id; adding = null; addingManually = false; refresh() },
+                onCancel = { adding = null; addingManually = false },
+            )
+        }
+
+        Button(
+            enabled = selected != null && session !is Session.Connecting,
+            onClick = {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                picker.launch(arrayOf("video/*", "audio/*"))
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Cast a file") }
+    }
+}
+
+@Composable
+private fun NowCasting(session: Session) {
+    val context = LocalContext.current
+    when (session) {
+        Session.Idle -> {}
+        is Session.Connecting -> Card(Modifier.fillMaxWidth()) {
+            Text("Connecting to ${session.device}…", Modifier.padding(16.dp))
+        }
+        is Session.Ended -> session.reason?.let {
+            Card(Modifier.fillMaxWidth()) { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
+        }
+        is Session.Casting -> Card(Modifier.fillMaxWidth()) {
+            val st = session.state
+            var dragging by remember { mutableStateOf<Float?>(null) }
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Casting to ${session.device}", style = MaterialTheme.typography.labelLarge)
+                Text(session.title, style = MaterialTheme.typography.titleMedium)
+                if (st.durationMs > 0) {
+                    Slider(
+                        value = dragging ?: (st.positionMs.toFloat() / st.durationMs),
+                        onValueChange = { dragging = it },
+                        onValueChangeFinished = {
+                            dragging?.let { CastService.send(context, CastService.ACTION_SEEK, (it * st.durationMs).toLong()) }
+                            dragging = null
+                        },
                     )
+                    Text("${clock(st.positionMs)} / ${clock(st.durationMs)}")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        CastService.send(context, if (st.playing) CastService.ACTION_PAUSE else CastService.ACTION_RESUME)
+                    }) { Text(if (st.playing) "Pause" else "Play") }
+                    OutlinedButton(onClick = { CastService.send(context, CastService.ACTION_STOP) }) { Text("Stop") }
                 }
             }
         }
     }
 }
 
-private fun testCast(addr: String, key: String): String {
-    val (host, portStr) = addr.split(":")
-    val out = StringBuilder()
-    Socket(host, portStr.trim().toInt()).use { socket ->
-        socket.tcpNoDelay = true
-        val start = System.nanoTime()
-        val secure = dial(socket, key)
-        out.appendLine("handshake: ok, in ${(System.nanoTime() - start) / 1_000_000} ms")
-
-        val hello = Hello(name = "Nothing Phone (2)", video = true, audio = true, rate = 48000, channels = 2, scale = 2)
-        secure.writeMessage(Kind.HELLO, hello.toJson().toByteArray(Charsets.UTF_8))
-        val welcomeMsg = secure.readMessage()
-        val welcome = parseWelcome(String(welcomeMsg.payload, Charsets.UTF_8))
-        out.appendLine("welcome: ok=${welcome.ok} ${welcome.w}x${welcome.h} rate=${welcome.rate} latency=${welcome.latencyMs}ms")
-        if (!welcome.ok) {
-            out.appendLine("reason: ${welcome.reason}")
-            return out.toString()
+@Composable
+private fun AddDevice(found: Found?, onSave: (Device) -> Unit, onCancel: () -> Unit) {
+    var name by remember(found) { mutableStateOf(found?.name ?: "") }
+    var address by remember(found) { mutableStateOf(found?.let { "${it.host}:${it.port}" } ?: "") }
+    var key by remember(found) { mutableStateOf("") }
+    val parsed = parseAddress(address)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                address, { address = it }, label = { Text("Address (host:port)") }, singleLine = true,
+                isError = address.isNotEmpty() && parsed == null, modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(key, { key = it }, label = { Text("Cast key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    enabled = parsed != null && key.isNotBlank(),
+                    onClick = { onSave(Device(name.ifBlank { parsed!!.first }, parsed!!.first, parsed.second, key.trim())) },
+                ) { Text("Save") }
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
         }
-
-        val t0 = System.nanoTime()
-        fun us() = (System.nanoTime() - t0) / 1000
-        secure.writeMessage(Kind.CLOCK, stamp(us()))
-
-        // A small solid-color JPEG stand-in for a real frame (the encoder comes with the engine module).
-        val jpeg = solidJpeg(welcome.w / 2, welcome.h / 2)
-        secure.writeMessage(Kind.VIDEO, stamp(us()), jpeg)
-        out.appendLine("sent one frame (${jpeg.size} bytes)")
-
-        val pcm = ByteArray(48000 / 4 * 4) // a quarter second of silence, 48kHz stereo S16LE
-        secure.writeMessage(Kind.AUDIO, stamp(us()), pcm)
-        out.appendLine("sent 250 ms of audio")
-
-        Thread.sleep(300)
-        secure.writeMessage(Kind.BYE)
-        out.appendLine("done — check the device log for cast decoded_fps / audio_late")
     }
-    return out.toString()
 }
 
-/** A JPEG the device can decode, without pulling in the app's real capture pipeline yet: a solid
- *  colour bitmap, encoded through Android's own [android.graphics.Bitmap]. */
-private fun solidJpeg(w: Int, h: Int): ByteArray {
-    val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.RGB_565)
-    bmp.eraseColor(android.graphics.Color.rgb(0x30 + Random.nextInt(0x20), 0x70, 0xC0))
-    val out = java.io.ByteArrayOutputStream()
-    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
-    return out.toByteArray()
+/** "host:port", with the port optional (8940 by default). */
+private fun parseAddress(text: String): Pair<String, Int>? {
+    val t = text.trim()
+    if (t.isEmpty()) return null
+    val i = t.lastIndexOf(':')
+    if (i < 0) return t to 8940
+    val port = t.substring(i + 1).toIntOrNull() ?: return null
+    return if (i > 0 && port in 1..65535) t.substring(0, i) to port else null
+}
+
+private fun displayName(context: android.content.Context, uri: Uri): String? =
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+        if (it.moveToFirst()) it.getString(0) else null
+    }
+
+private fun clock(ms: Long): String {
+    val s = ms / 1000
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 }

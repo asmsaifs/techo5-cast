@@ -55,6 +55,10 @@ class CastSender private constructor(
     private var video: Pair<Long, ByteArray>? = null
     private val audio = ArrayDeque<AudioChunk>()
     private var audioWaitingSince = 0L
+    // Where the last audio chunk was placed, so the next can follow it exactly (see pickNext).
+    private var lastAudioEpoch = -1
+    private var lastAudioMediaUs = 0L
+    private var lastAudioStampUs = 0L
     @Volatile private var closed = false
 
     private var videoSent = 0L
@@ -159,7 +163,12 @@ class CastSender private constructor(
                 break
             }
             if (at < now - LATE_AUDIO_US) { audio.poll(); audioDropped++; continue }
-            audioStamp = at
+            // The timeline is re-made from every video frame, and their release times jitter by a few
+            // ms. The device places a chunk by its stamp to the frame, so following that jitter leaves
+            // gaps and overlaps: ticks. Chunks are contiguous in the clip, so stamp each right after
+            // the last, and follow the timeline only when it has moved for real (a pause, a stall).
+            val follow = lastAudioStampUs + (head.mediaUs - lastAudioMediaUs)
+            audioStamp = if (head.epoch == lastAudioEpoch && kotlin.math.abs(at - follow) < AUDIO_RESYNC_US) follow else at
             break
         }
         val v = video
@@ -175,6 +184,9 @@ class CastSender private constructor(
             Outgoing(stamp, v!!.second, null)
         } else {
             val chunk = audio.poll()!!
+            lastAudioEpoch = chunk.epoch
+            lastAudioMediaUs = chunk.mediaUs
+            lastAudioStampUs = stamp
             audioWaitingSince = now
             Outgoing(stamp, null, chunk.pcm)
         }
@@ -211,6 +223,7 @@ class CastSender private constructor(
     companion object {
         private const val LATE_VIDEO_US = 100_000L
         private const val LATE_AUDIO_US = 400_000L
+        private const val AUDIO_RESYNC_US = 30_000L
         private const val ANCHOR_WAIT_US = 500_000L
         private const val MAX_AUDIO_CHUNKS = 200 // 4 s
 
