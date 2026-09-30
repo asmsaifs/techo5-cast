@@ -271,6 +271,8 @@ class CastSender private constructor(
                     Hello(name = name, video = video, audio = audio, rate = 48000, channels = 2, scale = scale)
                         .toJson().toByteArray(Charsets.UTF_8),
                 )
+                // The Show may be waiting for somebody there to accept the phone (20 s on its side).
+                socket.soTimeout = 35_000
                 val welcome = parseWelcome(String(secure.readMessage().payload, Charsets.UTF_8))
                 if (!welcome.ok) throw Refused(welcome.reason ?: "the Show refused")
                 socket.soTimeout = 0

@@ -32,6 +32,11 @@ Inside the encrypted stream: a 4-byte big-endian length, a kind byte, the payloa
 | 0x04 | clock | phone → device | 8-byte stamp: the phone's clock now, about once a second |
 | 0x05 | bye | phone → device | empty |
 
+The device may ask a person at its screen before it answers ("Cast to this screen? Decline / Accept"):
+the welcome then comes after up to 20 s, so a sender waits at least 30 s for it. A phone accepted in the
+last 5 minutes is let back in without asking, for a reconnect after the wi-fi dropped. The device's
+setting can turn the question off. A refusal says "declined" or "nobody accepted it on the device".
+
 A refused hello is answered with `ok:false` and a `reason` for the person to read ("in a call",
 "declined"), and the device closes.
 
