@@ -26,6 +26,8 @@ data class CastState(
     val grabAvgMs: Float = 0f,
     val grabSkipped: Long = 0,
     val ended: String? = null,
+    /** Mirroring the screen: no position, pause or seek. */
+    val live: Boolean = false,
 )
 
 /** What to play: a picture stream and, if the sound is a separate stream, that too. */

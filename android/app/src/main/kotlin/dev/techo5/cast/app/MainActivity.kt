@@ -3,6 +3,7 @@ package dev.techo5.cast.app
 import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
@@ -240,6 +242,19 @@ private fun Home(openSettings: () -> Unit) {
                     Text("  Paste a link")
                 }
             }
+            FilledTonalButton(
+                enabled = canCast,
+                onClick = {
+                    // Sound and notification permissions, and the screen-capture consent, are asked there.
+                    context.startActivity(
+                        Intent(context, MirrorActivity::class.java).putExtra(CastService.EXTRA_DEVICE, selected),
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Icon(Icons.Filled.ScreenShare, null, Modifier.size(20.dp))
+                Text("  Mirror screen")
+            }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -364,7 +379,15 @@ private fun SessionCard(session: Session) {
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                if (st.live) {
+                    // Mirroring has no position to seek or pause: only Stop.
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        FilledTonalButton(onClick = { CastService.send(context, CastService.ACTION_STOP) }) {
+                            Icon(Icons.Filled.Stop, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                            Text("  Stop mirroring")
+                        }
+                    }
+                } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = { CastService.send(context, CastService.ACTION_SEEK, (st.positionMs - 10_000).coerceAtLeast(0)) },
                         Modifier.size(48.dp),

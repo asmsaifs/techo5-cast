@@ -88,7 +88,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             Group("Power") {
                 Toggle("Battery saver", "At most 15 fps and lower quality", s.batterySaver) { update(s.copy(batterySaver = it)) }
                 Divider()
-                Toggle("Keep the phone awake", "Recommended for long videos", s.keepAwake) { update(s.copy(keepAwake = it)) }
+                Toggle("Keep playing with the screen off", "Recommended for long videos. Mirroring always keeps the screen on.", s.keepAwake) { update(s.copy(keepAwake = it)) }
             }
 
             Group("Diagnostics") {

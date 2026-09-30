@@ -8,10 +8,18 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.net.Uri
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.DisplayMetrics
+import android.view.WindowManager
+import androidx.core.content.IntentCompat
+import dev.techo5.cast.engine.MirrorEngine
 import dev.techo5.cast.discovery.Device
 import dev.techo5.cast.discovery.DeviceStore
 import dev.techo5.cast.engine.CastEngine
@@ -55,8 +63,10 @@ sealed interface Session {
 class CastService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var engine: CastEngine? = null
+    private var mirror: MirrorEngine? = null
     private var ticker: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var screenLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var device = ""
     private var title = ""
@@ -71,14 +81,23 @@ class CastService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        mirror?.let { m ->
+            val dm = screenSize()
+            m.resize(dm.widthPixels, dm.heightPixels, dm.densityDpi)
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> start(intent)
+            ACTION_MIRROR -> startMirror(intent)
             ACTION_PAUSE -> engine?.pause()
             ACTION_RESUME -> engine?.resume()
             ACTION_SEEK -> engine?.seekTo(intent.getLongExtra(EXTRA_POSITION_MS, 0))
             ACTION_STOP -> finish(null)
-            else -> if (engine == null) stopSelf()
+            else -> if (engine == null && mirror == null) stopSelf()
         }
         return START_NOT_STICKY
     }
@@ -112,6 +131,136 @@ class CastService : Service() {
         }
     }
 
+    /** Mirror mode (docs/android-app-plan.md 5.6): started by [MirrorActivity] with the result of the
+     *  system's screen-capture consent. The foreground service of type mediaProjection has to be up
+     *  before the projection is taken from the consent. */
+    private fun startMirror(intent: Intent) {
+        val target = intent.getStringExtra(EXTRA_DEVICE)?.let { DeviceStore(this).find(it) }
+        val data = IntentCompat.getParcelableExtra(intent, EXTRA_RESULT_DATA, Intent::class.java)
+        if (target == null || data == null) {
+            startForeground(
+                NOTIFICATION_ID, notification("TECHO5 Cast", "Nothing to mirror", false),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
+            finish("Screen sharing did not start.")
+            return
+        }
+        stopEngine()
+        this.target = target
+        settings = Settings.load(this)
+        link = null
+        device = target.name
+        title = "Mirroring this phone"
+        Session_.value = Session.Connecting(device)
+        startForeground(
+            NOTIFICATION_ID,
+            notification("Mirroring to $device", "Screen and sound", false, live = true),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
+        )
+        acquireLocks()
+        // Android ends a screen capture when the lock screen appears (STOP_REASON_KEYGUARD), which is
+        // what the screen timeout leads to; keep the screen on, dimmed, for as long as we mirror.
+        @Suppress("DEPRECATION")
+        if (screenLock == null) {
+            screenLock = (getSystemService(POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "techo5cast:mirror").apply { acquire() }
+        }
+        val projection = try {
+            (getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager)
+                .getMediaProjection(intent.getIntExtra(EXTRA_RESULT_CODE, 0), data)
+        } catch (e: SecurityException) {
+            null
+        }
+        if (projection == null) {
+            finish("Screen capture was not allowed.")
+            return
+        }
+        val audio = intent.getBooleanExtra(EXTRA_AUDIO, false)
+        scope.launch { connectMirror(target, projection, audio) }
+    }
+
+    private suspend fun connectMirror(target: Device, projection: MediaProjection, audio: Boolean) {
+        timeline = Timeline()
+        rate = RateAdapter(settings.fpsSteps)
+        AppLog.i(TAG, "mirroring to ${target.name} (${target.host}:${target.port}), audio $audio, scale ${settings.scale}, up to ${settings.effectiveFps} fps")
+        val sender = try {
+            dial(target, audio)
+        } catch (e: Refused) {
+            projection.stop()
+            finish("$device refused: ${e.message}")
+            return
+        } catch (e: Exception) {
+            projection.stop()
+            finish(describeFailure(e, device))
+            return
+        }
+        val dm = screenSize()
+        val mirror = MirrorEngine(
+            sender, timeline, projection, dm.widthPixels, dm.heightPixels, dm.densityDpi, audio,
+        ) { reason -> scope.launch { finish(reason) } }
+        this.mirror = mirror
+        mirror.setQuality(settings.effectiveQuality, rate.fps)
+        try {
+            mirror.start()
+        } catch (e: Exception) {
+            AppLog.i(TAG, "mirror start failed: ${e.javaClass.simpleName}: ${e.message}")
+            finish("Could not start mirroring: ${e.message}")
+            return
+        }
+        ticker = scope.launch {
+            while (true) {
+                val state = mirror.state()
+                latest = state
+                state.sender?.let { s ->
+                    rate.update(s.videoSent, s.videoDropped)?.let { mirror.setQuality(mirror.quality, it) }
+                }
+                if (!reconnecting) Session_.value = Session.Casting(device, title, state)
+                delay(1000)
+            }
+        }
+    }
+
+    /** The real size of the screen, navigation bar included, which is what the capture shows. */
+    private fun screenSize(): DisplayMetrics {
+        val dm = DisplayMetrics()
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        if (Build.VERSION.SDK_INT >= 30) {
+            val b = wm.maximumWindowMetrics.bounds
+            dm.widthPixels = b.width()
+            dm.heightPixels = b.height()
+            dm.densityDpi = resources.displayMetrics.densityDpi
+        } else {
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(dm)
+        }
+        return dm
+    }
+
+    private suspend fun reconnectMirror(mirror: MirrorEngine) {
+        val target = target ?: return
+        if (reconnecting) return
+        reconnecting = true
+        AppLog.i(TAG, "mirror connection lost, reconnecting")
+        Session_.value = Session.Connecting(device, "Reconnecting")
+        notify(notification("Reconnecting to $device…", title, false, live = true))
+        val deadline = System.currentTimeMillis() + RECONNECT_MS
+        while (this.mirror === mirror && System.currentTimeMillis() < deadline) {
+            try {
+                mirror.replaceSender(dial(target, mirror.audio))
+                reconnecting = false
+                notify(notification("Mirroring to $device", "Screen and sound", false, live = true))
+                return
+            } catch (e: Refused) {
+                break
+            } catch (e: Exception) {
+                AppLog.i(TAG, "reconnect attempt failed: ${e.javaClass.simpleName}: ${e.message}")
+                delay(1000)
+            }
+        }
+        reconnecting = false
+        if (this.mirror === mirror) finish("Lost the connection to $device.")
+    }
+
     /** A web link goes through the extractor; a file or a direct media link plays as it is. Null after
      *  ending the cast with the reason. */
     private suspend fun resolve(uri: Uri): PlayItem? {
@@ -134,10 +283,10 @@ class CastService : Service() {
 
     /** Dials the Show. Ends of the connection are reported as a lost link (worth a reconnect) or an
      *  end (the Show stopped it). */
-    private suspend fun dial(target: Device): CastSender = withContext(Dispatchers.IO) {
+    private suspend fun dial(target: Device, audio: Boolean = true): CastSender = withContext(Dispatchers.IO) {
         CastSender.connect(
             target.host, target.port, target.key, android.os.Build.MODEL, settings.scale,
-            video = true, audio = true, timeline = timeline,
+            video = true, audio = audio, timeline = timeline,
         ) { ended ->
             // From a network thread.
             scope.launch { if (ended.lost) reconnect() else finish(ended.reason) }
@@ -146,6 +295,7 @@ class CastService : Service() {
 
     /** The link dropped: pause, and try for about half a minute to pick up where we were. */
     private suspend fun reconnect() {
+        mirror?.let { return reconnectMirror(it) }
         val engine = engine ?: return
         val target = target ?: return
         if (reconnecting) return
@@ -245,6 +395,8 @@ class CastService : Service() {
         ticker = null
         engine?.stop()
         engine = null
+        mirror?.stop()
+        mirror = null
         latest = CastState()
     }
 
@@ -263,6 +415,8 @@ class CastService : Service() {
     private fun releaseLocks() {
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
+        screenLock?.takeIf { it.isHeld }?.release()
+        screenLock = null
         wifiLock?.takeIf { it.isHeld }?.release()
         wifiLock = null
     }
@@ -277,21 +431,27 @@ class CastService : Service() {
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, n)
     }
 
-    private fun notification(headline: String, text: String, playing: Boolean): Notification {
+    private fun notification(headline: String, text: String, playing: Boolean, live: Boolean = false): Notification {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Casting", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
-        val toggle = if (playing) action("Pause", ACTION_PAUSE) else action("Play", ACTION_RESUME)
-        return Notification.Builder(this, CHANNEL)
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(headline)
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(toggle)
+        // Mirroring has nothing to pause: Stop only.
+        if (live) {
+            return builder.addAction(action("Stop", ACTION_STOP))
+                .setStyle(Notification.MediaStyle().setShowActionsInCompactView(0))
+                .build()
+        }
+        val toggle = if (playing) action("Pause", ACTION_PAUSE) else action("Play", ACTION_RESUME)
+        return builder.addAction(toggle)
             .addAction(action("Stop", ACTION_STOP))
             .setStyle(Notification.MediaStyle().setShowActionsInCompactView(0, 1))
             .build()
@@ -310,6 +470,10 @@ class CastService : Service() {
         const val ACTION_RESUME = "dev.techo5.cast.RESUME"
         const val ACTION_SEEK = "dev.techo5.cast.SEEK"
         const val ACTION_STOP = "dev.techo5.cast.STOP"
+        const val ACTION_MIRROR = "dev.techo5.cast.MIRROR"
+        const val EXTRA_RESULT_CODE = "result_code"
+        const val EXTRA_RESULT_DATA = "result_data"
+        const val EXTRA_AUDIO = "audio"
         const val EXTRA_DEVICE = "device"
         const val EXTRA_TITLE = "title"
         const val EXTRA_POSITION_MS = "position_ms"
@@ -334,6 +498,18 @@ class CastService : Service() {
                 .setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 .putExtra(EXTRA_DEVICE, device.id)
                 .putExtra(EXTRA_TITLE, title)
+            context.startForegroundService(intent)
+        }
+
+        /** Starts mirroring the screen to [device] with the result of the system's capture consent. Call
+         *  from a visible activity, right after the consent. */
+        fun mirror(context: Context, resultCode: Int, data: Intent, device: Device, audio: Boolean) {
+            val intent = Intent(context, CastService::class.java)
+                .setAction(ACTION_MIRROR)
+                .putExtra(EXTRA_DEVICE, device.id)
+                .putExtra(EXTRA_RESULT_CODE, resultCode)
+                .putExtra(EXTRA_RESULT_DATA, data)
+                .putExtra(EXTRA_AUDIO, audio)
             context.startForegroundService(intent)
         }
 

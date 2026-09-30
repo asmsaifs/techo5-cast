@@ -67,13 +67,15 @@ class FrameGrabber(
     @Volatile private var aspect = 16f / 9f // display aspect of the video, set by the player
     private var lastSentUs = -1L // presentation time of the last frame encoded; -1 before the first
 
-    /** The surface to give the player. Blocks until the GL side is up. */
-    fun start(): Surface {
+    /** The surface to give the player. Blocks until the GL side is up. A producer that does not size its
+     *  own buffers (a virtual display) needs [bufferW] x [bufferH]. */
+    fun start(bufferW: Int = 0, bufferH: Int = 0): Surface {
         val ready = CountDownLatch(1)
         var failure: Throwable? = null
         handler.post {
             try {
                 initGl()
+                if (bufferW > 0 && bufferH > 0) surfaceTexture?.setDefaultBufferSize(bufferW, bufferH)
             } catch (t: Throwable) {
                 failure = t
             }
@@ -87,6 +89,12 @@ class FrameGrabber(
     /** The video's shape on screen (width/height, pixel aspect included), so it is letterboxed right. */
     fun setVideoAspect(aspect: Float) {
         if (aspect > 0f) this.aspect = aspect
+    }
+
+    /** The producer's size changed (a virtual display after a rotation). */
+    fun setBufferSize(w: Int, h: Int) {
+        handler.post { surfaceTexture?.setDefaultBufferSize(w, h) }
+        setVideoAspect(w.toFloat() / h)
     }
 
     fun stop() {
