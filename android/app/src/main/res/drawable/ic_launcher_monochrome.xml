@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon layer: the mark scaled into the 66 dp safe zone of the 108 dp canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <group android:translateX="18" android:translateY="18" android:scaleX="0.45" android:scaleY="0.45">
+
+    <path android:pathData="M64,36 L118,36 C129.046,36 138,44.954 138,56 L138,104 C138,115.046 129.046,124 118,124 L54,124" android:strokeColor="#FFFFFF" android:strokeWidth="12" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+    <path android:pathData="M22,84 L22,56 C22,44.954 30.954,36 42,36" android:strokeColor="#FFFFFF" android:strokeWidth="12" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+    <path android:pathData="M22,108 A18,18 0 0 1 40,126" android:strokeColor="#FFFFFF" android:strokeWidth="9" android:strokeLineCap="round"/>
+    <path android:pathData="M22,92 A34,34 0 0 1 56,126" android:strokeColor="#FFFFFF" android:strokeWidth="9" android:strokeLineCap="round"/>
+    <path android:pathData="M18.5,125 a4.5,4.5 0 1 0 9,0 a4.5,4.5 0 1 0 -9,0 Z" android:fillColor="#FFFFFF"/>
+    <path android:pathData="M72,65.5 L98,80 L72,94.5 Z" android:fillColor="#FFFFFF" android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineJoin="round"/>
+  </group>
+</vector>

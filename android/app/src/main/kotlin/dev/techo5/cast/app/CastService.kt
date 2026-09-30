@@ -206,7 +206,7 @@ class CastService : Service() {
             finish("$device refused: ${e.message}")
             return
         } catch (e: Exception) {
-            finish(explain(e))
+            finish(describeFailure(e, device))
             return
         }
         val engine = CastEngine(this, sender, timeline)
@@ -229,15 +229,6 @@ class CastService : Service() {
                 delay(1000)
             }
         }
-    }
-
-    private fun explain(e: Exception): String = when (e) {
-        is java.net.SocketTimeoutException, is java.net.ConnectException, is java.net.NoRouteToHostException ->
-            "Can't reach $device. Is Cast on, and is the phone on the same Wi-Fi?"
-        // A wrong key fails the handshake: either our decrypt fails or the Show hangs up on us.
-        is javax.crypto.BadPaddingException, is java.io.EOFException, is java.net.SocketException ->
-            "The key doesn't match $device."
-        else -> "Can't connect to $device: ${e.message ?: e.javaClass.simpleName}"
     }
 
     private fun finish(reason: String?) {
@@ -329,6 +320,11 @@ class CastService : Service() {
 
         private val Session_ = MutableStateFlow<Session>(Session.Idle)
         val session = Session_.asStateFlow()
+
+        /** The person has read why the last cast ended. */
+        fun clearEnded() {
+            if (Session_.value is Session.Ended) Session_.value = Session.Idle
+        }
 
         /** Starts casting [uri] to [device]. Call from a visible activity (Android 16 background rules). */
         fun cast(context: Context, uri: Uri, device: Device, title: String?) {

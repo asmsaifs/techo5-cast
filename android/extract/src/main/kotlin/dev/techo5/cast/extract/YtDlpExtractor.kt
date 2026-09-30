@@ -22,16 +22,23 @@ class YtDlpExtractor(context: Context, private val maxHeight: Int = 720) : Extra
         // The yt-dlp shipped in the app goes stale within weeks and YouTube then answers 403; pull the
         // current release at most once a day (docs/android-app-plan.md section 9).
         val prefs = app.getSharedPreferences("extract", Context.MODE_PRIVATE)
+        prefs.edit().putString("version", ytdlp.versionName(app)).apply()
         val now = System.currentTimeMillis()
         if (now - prefs.getLong("updated", 0) > 24 * 3600_000L) {
             try {
                 val status = ytdlp.updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
                 Log.i(TAG, "yt-dlp update: $status, now ${ytdlp.versionName(app)}")
-                prefs.edit().putLong("updated", now).apply()
+                prefs.edit().putLong("updated", now).putString("version", ytdlp.versionName(app)).apply()
             } catch (e: Exception) {
                 Log.w(TAG, "yt-dlp update failed: ${e.message}")
             }
         }
+    }
+
+    companion object {
+        /** The yt-dlp version last seen by a cast, or null before the first one. */
+        fun knownVersion(context: Context): String? =
+            context.applicationContext.getSharedPreferences("extract", Context.MODE_PRIVATE).getString("version", null)
     }
 
     override fun resolve(url: String): Resolved {
