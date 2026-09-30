@@ -25,12 +25,13 @@ Inside the encrypted stream: a 4-byte big-endian length, a kind byte, the payloa
 
 | Kind | Name | Direction | Payload |
 |---|---|---|---|
-| 0x01 | hello | phone → device | JSON `{name, video, audio, rate, channels, scale}`; the first message, once |
+| 0x01 | hello | phone → device | JSON `{name, video, audio, rate, channels, scale, title}` (`title` optional: what is playing, shown on the device for a few seconds); the first message, once |
 | 0x10 | welcome | device → phone | JSON `{ok, reason, w, h, rate, channels, latency_ms}` |
 | 0x02 | video | phone → device | 8-byte stamp (µs), then a JPEG of the whole frame |
 | 0x03 | audio | phone → device | 8-byte stamp (µs), then interleaved S16LE PCM, 48000 Hz, 2 channels |
 | 0x04 | clock | phone → device | 8-byte stamp: the phone's clock now, about once a second |
 | 0x05 | bye | phone → device | empty |
+| 0x12 | stats | device → phone | JSON `{shown, dropped, audio_late, audio_dropped}`, about once a second; totals since the cast began |
 
 The device may ask a person at its screen before it answers ("Cast to this screen? Decline / Accept"):
 the welcome then comes after up to 20 s, so a sender waits at least 30 s for it. A phone accepted in the
