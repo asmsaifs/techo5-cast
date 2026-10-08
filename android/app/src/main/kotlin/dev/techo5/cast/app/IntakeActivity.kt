@@ -13,7 +13,7 @@ import dev.techo5.cast.extract.findUrl
 /**
  * Where a share or "open with" lands (docs/android-app-plan.md 3.1, 3.2). It never shows a screen of
  * its own: it works out what was shared, picks the Show (asking only when there is more than one),
- * starts [CastService] and finishes, so the app that shared is still in front.
+ * starts [CastService], brings the app to the front and finishes.
  */
 class IntakeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,6 +48,7 @@ class IntakeActivity : Activity() {
         store.lastUsed = device.id
         CastService.cast(this, source, device, null)
         toast("Casting to ${device.name}")
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         finish()
     }
 

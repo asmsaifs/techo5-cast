@@ -377,6 +377,7 @@ class CastService : Service() {
             latest = state.copy(smooth = smooth)
             if (!reconnecting) Session_.value = Session.Casting(device, title, latest)
             state.ended?.let { finish(it) }
+            if (state.completed && state.ended == null) finish(null)
         }
         ticker = scope.launch {
             while (true) {

@@ -26,6 +26,8 @@ data class CastState(
     val grabAvgMs: Float = 0f,
     val grabSkipped: Long = 0,
     val ended: String? = null,
+    /** The video played to its end. */
+    val completed: Boolean = false,
     /** Mirroring the screen: no position, pause or seek. */
     val live: Boolean = false,
     /** From the Show's reports: true if the picture is arriving well, false if not, null if unknown. */
@@ -181,6 +183,7 @@ class CastEngine(private val context: Context, initialSender: CastSender, privat
                 grabAvgMs = grabber.avgWorkUs / 1000f,
                 grabSkipped = grabber.skipped,
                 ended = endedReason,
+                completed = p.playbackState == Player.STATE_ENDED,
             ),
         )
     }

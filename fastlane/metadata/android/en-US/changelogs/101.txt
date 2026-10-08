@@ -1,0 +1,2 @@
+- Sharing a video now brings TECHO5 Cast to the front
+- The cast stops by itself when the video reaches its end
