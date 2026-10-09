@@ -1,0 +1,3 @@
+- YouTube casts work again when YouTube says it is blocking the connection: sign in with Google in Settings
+- The app keeps only the session cookies, never the password; cookies.txt can be imported instead
+- The error now says what went wrong, and the app asks YouTube through its TV client as well

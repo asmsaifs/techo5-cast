@@ -32,6 +32,7 @@ Needs Android 10 or later (Android 14+ for the best mirror experience).
 | Mirror the screen or one app, with sound | Yes; some apps block sound capture |
 | DRM video (Netflix, Prime Video, Disney+…) | **No.** Links give nothing to play; mirroring shows black |
 | Age-restricted, private, members-only videos | No (they need a sign-in) |
+| YouTube "not a bot" block on your connection | Yes, once you sign in under Settings → YouTube (only the cookies are kept) |
 | YouTube's own Cast button | No. That is Google's protocol, and a Show can't be a receiver. Use Share. |
 
 While mirroring, the phone's screen stays on (Android ends a screen capture when the lock screen appears).
