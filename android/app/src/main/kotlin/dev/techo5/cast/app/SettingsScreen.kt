@@ -3,7 +3,10 @@ package dev.techo5.cast.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -89,6 +92,42 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Toggle("Battery saver", "At most 15 fps and lower quality", s.batterySaver) { update(s.copy(batterySaver = it)) }
                 Divider()
                 Toggle("Keep playing with the screen off", "Recommended for long videos. Mirroring always keeps the screen on.", s.keepAwake) { update(s.copy(keepAwake = it)) }
+            }
+
+            Group("YouTube") {
+                var hasCookies by remember { mutableStateOf(YtDlpExtractor.hasCookies(context)) }
+                val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    if (uri != null) {
+                        val ok = try {
+                            context.contentResolver.openInputStream(uri)?.use { YtDlpExtractor.importCookies(context, it) } ?: false
+                        } catch (_: Exception) { false }
+                        hasCookies = YtDlpExtractor.hasCookies(context)
+                        Toast.makeText(context, if (ok) "Cookies imported" else "No YouTube cookies found in that file", Toast.LENGTH_LONG).show()
+                    }
+                }
+                val signIn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+                    hasCookies = YtDlpExtractor.hasCookies(context)
+                }
+                Setting(
+                    "Sign-in",
+                    value = if (hasCookies) "Signed in" else "Not signed in",
+                    hint = "Use when YouTube says it is blocking this connection. Sign in on Google's own page, ideally with a " +
+                        "spare Google account (not your main one). The app keeps only the session cookies, never the password, " +
+                        "and only on this phone.",
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { signIn.launch(Intent(context, SignInActivity::class.java)) }) {
+                            Text(if (hasCookies) "Sign in again" else "Sign in with Google")
+                        }
+                        TextButton(onClick = { picker.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) }) {
+                            Text("Import cookies.txt")
+                        }
+                        if (hasCookies) TextButton(onClick = {
+                            YtDlpExtractor.clearCookies(context)
+                            hasCookies = false
+                        }) { Text("Remove") }
+                    }
+                }
             }
 
             Group("Diagnostics") {

@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import java.io.File
+import java.io.InputStream
 
 /**
  * yt-dlp on the phone, through youtubedl-android. Format choice as `castsend` does it: up to 720p,
@@ -39,6 +41,30 @@ class YtDlpExtractor(context: Context, private val maxHeight: Int = 720) : Extra
         /** The yt-dlp version last seen by a cast, or null before the first one. */
         fun knownVersion(context: Context): String? =
             context.applicationContext.getSharedPreferences("extract", Context.MODE_PRIVATE).getString("version", null)
+
+        private fun cookiesFile(context: Context) = File(context.applicationContext.filesDir, "cookies.txt")
+
+        /** Whether a cookies.txt has been imported; yt-dlp sends it to YouTube to get past the "not a bot" check. */
+        fun hasCookies(context: Context): Boolean = cookiesFile(context).length() > 0
+
+        /**
+         * Copies a Netscape-format cookies.txt (as browser extensions export it) into the app's private
+         * storage. Returns false, leaving any earlier file alone, when [source] holds no YouTube/Google cookies.
+         */
+        fun importCookies(context: Context, source: InputStream): Boolean =
+            saveCookies(context, source.bufferedReader().use { it.readText() })
+
+        /** Stores [text], a Netscape-format cookie file, unless it holds no YouTube/Google cookies. */
+        fun saveCookies(context: Context, text: String): Boolean {
+            val cookieLines = text.lineSequence().filter { it.isNotBlank() && !it.startsWith("#") || it.startsWith("#HttpOnly_") }
+            if (cookieLines.none { it.contains("youtube.com") || it.contains("google.com") }) return false
+            cookiesFile(context).writeText(text)
+            return true
+        }
+
+        fun clearCookies(context: Context) {
+            cookiesFile(context).delete()
+        }
     }
 
     override fun resolve(url: String): Resolved {
@@ -47,6 +73,10 @@ class YtDlpExtractor(context: Context, private val maxHeight: Int = 720) : Extra
             ready()
             val request = YoutubeDLRequest(url).apply {
                 addOption("--no-playlist")
+                // YouTube rate-limits the web page fetch per IP and then demands a sign-in; the tv client
+                // needs neither the page nor a PO token, so it carries the cast when the web client is blocked.
+                addOption("--extractor-args", "youtube:player_client=default,tv")
+                if (hasCookies(app)) addOption("--cookies", cookiesFile(app).absolutePath)
                 addOption("-f", "bv*[height<=$maxHeight]+ba/b[height<=$maxHeight]/b")
             }
             val info = YoutubeDL.getInstance().getInfo(request)
@@ -69,12 +99,15 @@ class YtDlpExtractor(context: Context, private val maxHeight: Int = 720) : Extra
         } catch (e: InterruptedException) {
             throw e
         } catch (e: Exception) {
+            Log.w(TAG, "yt-dlp failed for $url: ${e.message}")
             throw ExtractFailed(explain(e.message.orEmpty()), e)
         }
     }
 
     private fun explain(m: String): String = when {
         m.contains("DRM", true) -> "This video is protected and can't be cast."
+        m.contains("not a bot", true) ->
+            "YouTube is blocking this connection. Import your YouTube cookies in Settings, or try again later."
         m.contains("Sign in", true) || m.contains("login", true) || m.contains("private", true) ||
             m.contains("members", true) || m.contains("age", true) && m.contains("confirm", true) ->
             "This video can't be cast: it needs a sign-in."

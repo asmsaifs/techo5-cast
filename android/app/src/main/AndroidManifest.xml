@@ -30,6 +30,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".SignInActivity" android:exported="false" />
+
         <!-- The share sheet and "open with": a transparent hop that picks the Show and starts the service. -->
         <activity
             android:name=".IntakeActivity"
