@@ -12,6 +12,7 @@ import android.opengl.GLES20
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
+import dev.techo5.cast.protocol.VIDEO_MAX
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -198,13 +199,16 @@ class FrameGrabber(
         GLES20.glReadPixels(0, 0, outW, outH, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, readBack)
         readBack.rewind()
         bitmap.copyPixelsFromBuffer(readBack)
-        jpegOut.reset()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, jpegOut)
+        val jpeg = encodeWithin(VIDEO_MAX, quality) { q ->
+            jpegOut.reset()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, q, jpegOut)
+            jpegOut.toByteArray()
+        }
 
         encoded++
         val work = (System.nanoTime() - t0) / 1000
         avgWorkUs = if (encoded == 1L) work else (avgWorkUs * 15 + work) / 16
-        onFrame(stampFor(presentationUs), jpegOut.toByteArray())
+        if (jpeg != null) onFrame(stampFor(presentationUs), jpeg)
     }
 
     private fun draw() {

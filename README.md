@@ -13,13 +13,17 @@ frames and audio over your own Wi-Fi, encrypted; the Show just displays them.
 1. On the Show, open **Settings → Connections**, turn **Cast from a phone** on, and tap **Show** on
    **Pairing code**. (The Show needs a TECHO5 build with the cast receiver; see
    [docs/releasing.md](docs/releasing.md#the-show-side), and the Show's side of this in
-   [techo5 docs/cast.md](https://github.com/asmsaifs/techo5/blob/main/docs/cast.md).)
+   [techo5 docs/cast.md](https://github.com/HuskerMinion/techo5/blob/main/docs/cast.md). Cast is merged into
+   [TECHO5](https://github.com/HuskerMinion/techo5) itself, but no release up to v1.6.53 has it yet.)
 2. On the phone, download the APK for your phone from the
    [latest release](https://github.com/asmsaifs/techo5-cast/releases/latest): `arm64-v8a` for nearly every
    phone made since 2017, or the `universal` one if unsure. Open it and allow installing from that source
    when Android asks. Check the download against `SHA256SUMS` if you like.
 3. In the app, **Add a Show → Scan the code**, then **Check connection** and **Save**.
 4. In YouTube, tap **Share → TECHO5 Cast**. The Show asks you to **Accept**; after that, it plays.
+
+The Show asks every time the app connects: for **Check connection**, for each cast, and again when the app
+reconnects after the Wi-Fi drops. Tap **Accept** within 20 seconds.
 
 Needs Android 10 or later (Android 14+ for the best mirror experience).
 

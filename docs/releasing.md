@@ -77,11 +77,12 @@ other: uninstall first.
 
 ## The Show side
 
-The app needs the receiver in `echod/internal/feature/cast` (the techo5 repository). It is in `main` there, but
-a Show only has it once a TECHO5 release that includes it is installed in a slot. Until then it can be tried
+The app needs the receiver in `echod/internal/feature/cast`. It is in `main` of
+[HuskerMinion/techo5](https://github.com/HuskerMinion/techo5) (and in the asmsaifs fork's releases), but
+a Show on TECHO5's own releases only has it once a TECHO5 release that includes it is installed in a slot. Until then it can be tried
 on a running Show by copying a built daemon over and binding it until the next reboot
-([techo5 docs/building.md](https://github.com/asmsaifs/techo5/blob/main/docs/building.md), section 3; the
-steps and the no-sftp workaround are also in [techo5 docs/cast.md](https://github.com/asmsaifs/techo5/blob/main/docs/cast.md)).
+([techo5 docs/building.md](https://github.com/HuskerMinion/techo5/blob/main/docs/building.md), section 3; the
+steps and the no-sftp workaround are also in [techo5 docs/cast.md](https://github.com/HuskerMinion/techo5/blob/main/docs/cast.md)).
 Note the Show has no sftp server, so use `ssh root@<address> 'cat > /tmp/echod-test' < bin/echod-arm` where
 `scp` fails.
 

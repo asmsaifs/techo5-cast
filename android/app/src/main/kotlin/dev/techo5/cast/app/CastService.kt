@@ -199,6 +199,8 @@ class CastService : Service() {
             finish(describeFailure(e, device))
             return
         }
+        // Accepted: take "Tap Accept" off the notification, which nothing else rewrites while mirroring.
+        notify(notification("Mirroring to $device", "Screen and sound", false, live = true))
         val dm = screenSize()
         val mirror = MirrorEngine(
             sender, timeline, projection, dm.widthPixels, dm.heightPixels, dm.densityDpi, audio, this,
@@ -293,11 +295,18 @@ class CastService : Service() {
     private suspend fun dial(target: Device, audio: Boolean = true): CastSender = withContext(Dispatchers.IO) {
         CastSender.connect(
             target.host, target.port, target.key, android.os.Build.MODEL, settings.scale, title,
-            video = true, audio = audio, timeline = timeline,
+            video = true, audio = audio, timeline = timeline, onWaiting = ::askToAccept,
         ) { ended ->
             // From a network thread.
             scope.launch { if (ended.lost) reconnect() else finish(ended.reason) }
         }
+    }
+
+    /** The Show asks somebody there before every cast, a reconnect too: say so while we wait. */
+    private fun askToAccept() {
+        val step = if (reconnecting) "Reconnecting: tap Accept on the Show" else "Tap Accept on the Show"
+        Session_.value = Session.Connecting(device, step)
+        notify(notification("$step ($device)", title, false))
     }
 
     /** The link dropped: pause, and try for about half a minute to pick up where we were. */

@@ -1,0 +1,2 @@
+- The app now says when to tap Accept on the Show: connecting, reconnecting and Check connection
+- A picture too large for the Show is sent at a lower quality instead of being dropped

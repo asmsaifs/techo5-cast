@@ -46,6 +46,8 @@ import kotlinx.coroutines.withContext
 private sealed interface Check {
     data object Idle : Check
     data object Running : Check
+    /** Connected, and the Show is asking somebody there. */
+    data object Waiting : Check
     data class Done(val ok: Boolean, val message: String) : Check
 }
 
@@ -121,9 +123,12 @@ fun AddDeviceSheet(found: Found?, onSave: (Device) -> Unit, onDismiss: () -> Uni
 
             when (val c = check) {
                 Check.Idle -> {}
-                Check.Running -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Check.Running, Check.Waiting -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("Checking…", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (c == Check.Waiting) "Tap Accept on the Show…" else "Checking…",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
                 is Check.Done -> Text(
                     c.message,
@@ -134,11 +139,11 @@ fun AddDeviceSheet(found: Found?, onSave: (Device) -> Unit, onDismiss: () -> Uni
 
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
-                    enabled = device != null && check != Check.Running,
+                    enabled = device != null && check != Check.Running && check != Check.Waiting,
                     onClick = {
                         val d = device ?: return@OutlinedButton
                         check = Check.Running
-                        scope.launch { check = test(d) }
+                        scope.launch { check = test(d) { check = Check.Waiting } }
                     },
                     modifier = Modifier.weight(1f).height(48.dp),
                 ) { Text("Check connection") }
@@ -153,11 +158,11 @@ fun AddDeviceSheet(found: Found?, onSave: (Device) -> Unit, onDismiss: () -> Uni
 }
 
 /** Dials the Show and hangs up. */
-private suspend fun test(device: Device): Check = withContext(Dispatchers.IO) {
+private suspend fun test(device: Device, onWaiting: () -> Unit): Check = withContext(Dispatchers.IO) {
     try {
         CastSender.connect(
             device.host, device.port, device.key, android.os.Build.MODEL, 2,
-            video = true, audio = true, timeline = Timeline(),
+            video = true, audio = true, timeline = Timeline(), onWaiting = onWaiting,
         ) {}.close()
         Check.Done(true, "Connected to ${device.name}.")
     } catch (e: Refused) {

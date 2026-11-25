@@ -23,6 +23,9 @@ object Kind {
 /** The largest message either side accepts: a full-screen JPEG is well under 1 MB. */
 const val MESSAGE_MAX = 4 shl 20
 
+/** The largest JPEG the Show takes in a video message (the stamp not counted); a larger one is dropped. */
+const val VIDEO_MAX = 1 shl 20
+
 /**
  * Opens a cast. Audio is fixed at what the speaker plays, so a sender that cannot make it says so
  * here rather than the device playing it at the wrong speed. `scale` is 1 (frames are screen size)

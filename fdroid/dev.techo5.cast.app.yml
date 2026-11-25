@@ -39,8 +39,26 @@ Builds:
     gradleprops:
       - versionName=0.1.1
       - versionCode=101
+  - versionName: 0.2.0
+    versionCode: 200
+    commit: v0.2.0
+    subdir: android/app
+    gradle:
+      - yes
+    gradleprops:
+      - versionName=0.2.0
+      - versionCode=200
+  - versionName: 0.2.1
+    versionCode: 201
+    commit: v0.2.1
+    subdir: android/app
+    gradle:
+      - yes
+    gradleprops:
+      - versionName=0.2.1
+      - versionCode=201
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9.]+$
-CurrentVersion: 0.1.1
-CurrentVersionCode: 101
+CurrentVersion: 0.2.1
+CurrentVersionCode: 201

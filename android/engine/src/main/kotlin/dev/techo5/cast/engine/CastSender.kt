@@ -258,7 +258,8 @@ class CastSender private constructor(
         class Refused(val reason: String) : Exception(reason)
 
         /** Dials a Show, does the handshake and the hello; throws [Refused] if it says no. Call off the
-         *  main thread. */
+         *  main thread. [onWaiting] is called, on this thread, once the hello is sent and the answer is
+         *  the Show's to give: it asks somebody there to tap Accept. */
         fun connect(
             host: String,
             port: Int,
@@ -269,6 +270,7 @@ class CastSender private constructor(
             video: Boolean,
             audio: Boolean,
             timeline: Timeline,
+            onWaiting: () -> Unit = {},
             onEnded: (CastEnded) -> Unit,
         ): CastSender {
             val socket = Socket()
@@ -284,6 +286,7 @@ class CastSender private constructor(
                 )
                 // The Show may be waiting for somebody there to accept the phone (20 s on its side).
                 socket.soTimeout = 35_000
+                onWaiting()
                 val welcome = parseWelcome(String(secure.readMessage().payload, Charsets.UTF_8))
                 if (!welcome.ok) throw Refused(welcome.reason ?: "the Show refused")
                 socket.soTimeout = 0

@@ -46,10 +46,13 @@ Inside the encrypted stream: a 4-byte big-endian length, a kind byte, the payloa
 | 0x05 | bye | phone → device | empty |
 | 0x12 | stats | device → phone | JSON `{shown, dropped, audio_late, audio_dropped}`, about once a second; totals since the cast began |
 
-The device may ask a person at its screen before it answers ("Cast to this screen? Decline / Accept"):
-the welcome then comes after up to 20 s, so a sender waits at least 30 s for it. A phone accepted in the
-last 5 minutes is let back in without asking, for a reconnect after the wi-fi dropped. The device's
-setting can turn the question off. A refusal says "declined" or "nobody accepted it on the device".
+A device asks a person at its screen before it answers ("Cast to this screen? Decline / Accept"):
+the welcome then comes after up to 20 s, so a sender waits at least 30 s for it. It asks every time, a
+reconnect included, so a sender says that somebody there has to accept. A refusal says "declined" or
+"nobody accepted it on the device". The question ends if the sender closes the connection.
+
+A connection has 3 s to finish the handshake and send its hello. Receivers before this rule had 10 s,
+and let a phone accepted in the last 5 minutes back in without asking.
 
 A refused hello is answered with `ok:false` and a `reason` for the person to read ("in a call",
 "declined"), and the device closes.
@@ -89,6 +92,9 @@ A 6 s stall measured this way costs 6 s of pause and no dropped frames.
 - A frame more than 100 ms past its time, and older frames when a newer one is waiting: the picture
   stays on the present.
 - A frame larger than the screen (`w`×`h` in the welcome).
+- A video JPEG over 1 MiB. A sender encodes it again at a lower quality instead. The device also holds
+  at most 8 MiB of frames waiting to be shown, and drops the oldest.
+- A video frame stamped more than 2 s ahead of now.
 - Audio that is not whole 4-byte frames; anything stamped more than 2 s ahead of now.
 - Media the hello did not announce.
 
